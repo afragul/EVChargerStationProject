@@ -1,0 +1,10 @@
+# Gizli Çevresel Değişkenler
+.env
+
+# Sanal Ortam Klasörü (bunu da git'e atmamalıyız)
+.venv/
+env/
+
+# Python Ön Bellek Dosyaları
+__pycache__/
+*.pyc

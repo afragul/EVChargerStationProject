@@ -1,0 +1,19 @@
+# Web Framework ve Sunucu
+fastapi
+uvicorn[standard]
+jinja2
+
+# Veritabanı ve ORM (PostgreSQL)
+sqlalchemy
+psycopg2-binary
+alembic
+
+# Çevresel Değişkenler (Gizli URL'ler için)
+python-dotenv
+
+# Güvenlik ve Şifreleme (Bcrypt ve JWT)
+passlib[bcrypt]
+python-jose[cryptography]
+
+# Veri Doğrulama (Pydantic ve E-posta kontrolü için)
+pydantic[email]
