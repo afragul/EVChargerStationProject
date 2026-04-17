@@ -1,15 +1,42 @@
-from sqlalchemy import Column, Integer, String, Float, ForeignKey, Enum , Date , Time ,DateTime
+from sqlalchemy import Column, Integer, String, Float, ForeignKey, Enum, Date, Time, DateTime
 from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func  # Otomatik zaman damgası için eklendi
 import enum
 from database import Base
-from datetime import datetime
 
-class ChargerStatus(str, enum.Enum): #charger icin status belirtecek class bu
+# ============================================
+# ENUM TANIMLAMALARI (İyileştirilmiş)
+# ============================================
+
+class UserRole(str, enum.Enum):
+    """Kullanıcı rolleri için Enum. models.py içinde tanımlanması önerilir."""
+    driver = "driver"
+    operator = "operator"
+    admin = "admin"
+
+class ChargerStatus(str, enum.Enum):
     available = "available"
     occupied = "occupied"
     offline = "offline"
 
-#user table:
+class ChargerType(str, enum.Enum):
+    """Şarj cihazı tipi (AC/DC) için Enum."""
+    AC = "AC"
+    DC = "DC"
+
+class PaymentType(str, enum.Enum):
+    topup = "TopUp"
+    charge = "Charge"
+    refund = "Refund"
+
+class ReportStatus(str, enum.Enum):
+    open = "open"
+    resolved = "resolved"
+
+# ============================================
+# TABLO MODELLERİ
+# ============================================
+
 class User(Base):
     __tablename__ = "users"
 
@@ -19,148 +46,144 @@ class User(Base):
     phone = Column(String)
     hashed_password = Column(String, nullable=False)
 
-    role = Column(String, nullable=False)
-    driver_profile = relationship("Driver", back_populates="user", uselist=False)
-    operator_profile = relationship("Operator", back_populates="user", uselist=False)
-    admin_profile = relationship("Admin", back_populates="user", uselist=False)
+    # String yerine Enum kullanıldı
+    role = Column(Enum(UserRole), nullable=False)
+
+    # İlişkiler
+    driver_profile = relationship("Driver", back_populates="user", uselist=False, cascade="all, delete-orphan")
+    operator_profile = relationship("Operator", back_populates="user", uselist=False, cascade="all, delete-orphan")
+    admin_profile = relationship("Admin", back_populates="user", uselist=False, cascade="all, delete-orphan")
+
 
 class Driver(Base):
     __tablename__ = "drivers"
-    driver_id = Column(Integer, ForeignKey("users.user_id"), primary_key=True, index=True)
-    wallet_balance = Column(Float, default=0.0)
+    # ForeignKey'e ondelete="CASCADE" eklendi (User silinince Driver da silinir)
+    driver_id = Column(Integer, ForeignKey("users.user_id", ondelete="CASCADE"), primary_key=True, index=True)
+    wallet_balance = Column(Float, default=0.0, nullable=False)
 
-    # iliskiler
+    # İlişkiler
     user = relationship("User", back_populates="driver_profile")
-    vehicles = relationship("Vehicle", back_populates="owner")
+    vehicles = relationship("Vehicle", back_populates="owner", cascade="all, delete-orphan")
     reservations = relationship("Reservation", back_populates="driver")
-    payments=relationship("Payment", back_populates="driver")
+    payments = relationship("Payment", back_populates="driver")
 
 
 class Operator(Base):
     __tablename__ = "operators"
-    operator_id = Column(Integer, ForeignKey("users.user_id"), primary_key=True)
+    operator_id = Column(Integer, ForeignKey("users.user_id", ondelete="CASCADE"), primary_key=True)
 
-    # ilişkiler
     user = relationship("User", back_populates="operator_profile")
-    managed_stations = relationship("Station", back_populates="manager") # burda sorumlu olduğu istasyonlar
+    managed_stations = relationship("Station", back_populates="manager")
 
 
 class Admin(Base):
     __tablename__ = "admins"
-    admin_id = Column(Integer, ForeignKey("users.user_id"), primary_key=True)
+    admin_id = Column(Integer, ForeignKey("users.user_id", ondelete="CASCADE"), primary_key=True)
 
     user = relationship("User", back_populates="admin_profile")
 
-#station table
+
 class Station(Base):
     __tablename__ = "stations"
     station_id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)
-    address = Column(String , nullable=False)
+    address = Column(String, nullable=False)
     latitude = Column(Float)
     longitude = Column(Float)
     operating_hours = Column(String)
 
-    operator_id = Column(Integer, ForeignKey("operators.operator_id"), nullable=True)
+    operator_id = Column(Integer, ForeignKey("operators.operator_id", ondelete="SET NULL"), nullable=True)
     manager = relationship("Operator", back_populates="managed_stations")
-    chargers = relationship("Charger", back_populates="station")
+    chargers = relationship("Charger", back_populates="station", cascade="all, delete-orphan")
 
-#charger table
+
 class Charger(Base):
     __tablename__ = "chargers"
     charger_id = Column(Integer, primary_key=True, index=True)
 
-    station_id = Column(Integer, ForeignKey("stations.station_id")) #fk
+    station_id = Column(Integer, ForeignKey("stations.station_id", ondelete="CASCADE"), nullable=False)
 
-    type = Column(String)  # AC veya DC
-    power_kW = Column(Integer)
-    connector_type = Column(String)  # Type 2, CCS vs
-    price_per_kWh = Column(Float)
-    status = Column(Enum(ChargerStatus), default=ChargerStatus.available)
+    # type alanı Enum olarak değiştirildi
+    type = Column(Enum(ChargerType), nullable=False)
+    power_kW = Column(Integer, nullable=False)
+    connector_type = Column(String, nullable=False)
+    price_per_kWh = Column(Float, nullable=False)
+    status = Column(Enum(ChargerStatus), default=ChargerStatus.available, nullable=False)
 
+    # İlişkiler
     station = relationship("Station", back_populates="chargers")
-    reports= relationship("IssueReport", back_populates="charger")
+    reports = relationship("IssueReport", back_populates="charger")
+    reservations = relationship("Reservation", back_populates="charger")  # EKSİK İLİŞKİ EKLENDİ
 
-#vehicle table
+
 class Vehicle(Base):
     __tablename__ = "vehicles"
     vehicle_id = Column(Integer, primary_key=True, index=True)
-    owner_id = Column(Integer, ForeignKey("drivers.driver_id")) #fk
-    brand = Column(String)
-    model = Column(String)
-    battery_kWh = Column(Float)
-    connector_type = Column(String)  # Tip 2, CCS vs
-    plate_number = Column(String, unique=True)  # plaka
+    owner_id = Column(Integer, ForeignKey("drivers.driver_id", ondelete="CASCADE"), nullable=False)
+    brand = Column(String, nullable=False)
+    model = Column(String, nullable=False)
+    battery_kWh = Column(Float, nullable=False)
+    connector_type = Column(String, nullable=False)
+    plate_number = Column(String, unique=True, nullable=False)
 
     owner = relationship("Driver", back_populates="vehicles")
 
 
-#reservation table
 class Reservation(Base):
     __tablename__ = "reservations"
     reservation_id = Column(Integer, primary_key=True, index=True)
-    #resi kim yapti, hangi charger icin yapti
-    driver_id = Column(Integer, ForeignKey("drivers.driver_id"))
-    charger_id = Column(Integer, ForeignKey("chargers.charger_id"))
 
-    date = Column(Date)
-    start_time = Column(Time)
-    end_time = Column(Time)
+    driver_id = Column(Integer, ForeignKey("drivers.driver_id", ondelete="CASCADE"), nullable=False)
+    charger_id = Column(Integer, ForeignKey("chargers.charger_id", ondelete="CASCADE"), nullable=False)
 
-    status = Column(String, default="active") # "active", "completed", "cancelled"
+    date = Column(Date, nullable=False)
+    start_time = Column(Time, nullable=False)
+    end_time = Column(Time, nullable=False)
 
+    status = Column(String, default="active", nullable=False)  # "active", "completed", "cancelled"
+
+    # İlişkiler
     driver = relationship("Driver", back_populates="reservations")
-    charger = relationship("Charger")  # Hangi cihaz rezerve edildi
+    charger = relationship("Charger", back_populates="reservations")  # back_populates düzeltildi
     payment = relationship("Payment", back_populates="reservation", uselist=False)
     charging_session = relationship("ChargingSession", back_populates="reservation", uselist=False)
 
 
-#payment table
-class PaymentType(str, enum.Enum): #odeme tipleri icin
-    topup = "TopUp"
-    charge = "Charge"
-    refund = "Refund"
-
 class Payment(Base):
     __tablename__ = "payments"
     payment_id = Column(Integer, primary_key=True, index=True)
-    driver_id = Column(Integer, ForeignKey("drivers.driver_id"))
-    reservation_id = Column(Integer, ForeignKey("reservations.reservation_id"))
-    amount = Column(Float)
-    type = Column(Enum(PaymentType))
-    timestamp = Column(DateTime, default=datetime.utcnow) #otomatik olarak suanin tarihini atar
+    driver_id = Column(Integer, ForeignKey("drivers.driver_id", ondelete="CASCADE"), nullable=False)
+    reservation_id = Column(Integer, ForeignKey("reservations.reservation_id", ondelete="SET NULL"), nullable=True)
+    amount = Column(Float, nullable=False)
+    type = Column(Enum(PaymentType), nullable=False)
+    # default değer func.now() olarak düzeltildi (otomatik zaman damgası)
+    timestamp = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     driver = relationship("Driver", back_populates="payments")
     reservation = relationship("Reservation", back_populates="payment")
 
 
-
-#issuereport table
-class ReportStatus(str, enum.Enum):
-    open = "open"
-    resolved = "resolved"
-
 class IssueReport(Base):
     __tablename__ = "issue_reports"
     issue_id = Column(Integer, primary_key=True, index=True)
 
-    charger_id = Column(Integer, ForeignKey("chargers.charger_id")) #ariza hangi cihaza ait
-    description = Column(String)
-    reported_at = Column(DateTime, default=datetime.utcnow)
-    status = Column(Enum(ReportStatus), default=ReportStatus.open)
+    charger_id = Column(Integer, ForeignKey("chargers.charger_id", ondelete="CASCADE"), nullable=False)
+    description = Column(String, nullable=False)
+    reported_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    status = Column(Enum(ReportStatus), default=ReportStatus.open, nullable=False)
 
     charger = relationship("Charger", back_populates="reports")
 
-#chargingsession table
+
 class ChargingSession(Base):
     __tablename__ = "charging_sessions"
     charging_session_id = Column(Integer, primary_key=True, index=True)
-    reservation_id = Column(Integer, ForeignKey("reservations.reservation_id"), unique=True)
+    reservation_id = Column(Integer, ForeignKey("reservations.reservation_id", ondelete="CASCADE"), unique=True, nullable=False)
 
-    start_soc = Column(Float)  # soc = State of Charge (Başlangıç Batarya Yüzdesi)
-    end_soc = Column(Float)  # Bitiş Batarya Yüzdesi
-    kwh_consumed = Column(Float)
-    total_cost = Column(Float)
-    duration_min = Column(Integer)
+    start_soc = Column(Float, nullable=False)
+    end_soc = Column(Float, nullable=False)
+    kwh_consumed = Column(Float, nullable=False)
+    total_cost = Column(Float, nullable=False)
+    duration_min = Column(Integer, nullable=False)
 
     reservation = relationship("Reservation", back_populates="charging_session")
