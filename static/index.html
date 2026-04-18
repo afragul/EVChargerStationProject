@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>EV Charging Station Map</title>
+    <style>
+        #map { height: 500px; width: 100%; }
+        .controls { margin: 10px; }
+        .info-window { max-width: 200px; }
+    </style>
+</head>
+<body>
+    <h1>EV Charging Stations</h1>
+    <div class="controls">
+        <button onclick="getUserLocation()">📍 My Location</button>
+        <input type="text" id="addressInput" placeholder="Enter address" size="30">
+        <button onclick="searchAddress()">Search</button>
+    </div>
+    <div id="map"></div>
+
+    <script>
+        let map;
+        let userMarker = null;
+        let stationMarkers = [];
+
+        async function initMap() {
+            // Default center (Turkey)
+            map = new google.maps.Map(document.getElementById("map"), {
+                center: { lat: 39.9334, lng: 32.8597 },
+                zoom: 7,
+            });
+            await loadStations();
+        }
+
+        async function loadStations() {
+            const response = await fetch("/stations/");  // Your existing endpoint
+            const stations = await response.json();
+            for (const station of stations) {
+                // Get station status (green/yellow/red) by checking its chargers
+                const chargerResp = await fetch(`/chargers/?station_id=${station.station_id}`);
+                const chargers = await chargerResp.json();
+                let hasAvailable = false, hasOffline = false;
+                chargers.forEach(c => {
+                    if (c.status === "available") hasAvailable = true;
+                    if (c.status === "offline") hasOffline = true;
+                });
+                let markerColor = "gray";
+                if (hasAvailable) markerColor = "green";
+                else if (hasOffline) markerColor = "red";
+                else markerColor = "yellow";
+
+                const marker = new google.maps.Marker({
+                    position: { lat: station.latitude, lng: station.longitude },
+                    map: map,
+                    title: station.name,
+                    icon: `http://maps.google.com/mapfiles/ms/icons/${markerColor}-dot.png`
+                });
+
+                const infoContent = `
+                    <div class="info-window">
+                        <h3>${station.name}</h3>
+                        <p>${station.address}</p>
+                        <button onclick="getDirectionsTo(${station.latitude}, ${station.longitude})">🚗 Directions</button>
+                    </div>
+                `;
+                const infoWindow = new google.maps.InfoWindow({ content: infoContent });
+                marker.addListener("click", () => infoWindow.open(map, marker));
+                stationMarkers.push(marker);
+            }
+        }
+
+        function getUserLocation() {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition((pos) => {
+                    const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+                    if (userMarker) userMarker.setMap(null);
+                    userMarker = new google.maps.Marker({
+                        position: loc,
+                        map: map,
+                        title: "Your location",
+                        icon: "http://maps.google.com/mapfiles/ms/icons/blue-dot.png"
+                    });
+                    map.setCenter(loc);
+                    map.setZoom(12);
+                });
+            } else {
+                alert("Geolocation not supported");
+            }
+        }
+
+        async function getDirectionsTo(destLat, destLng) {
+            if (!userMarker) {
+                alert("Please click 'My Location' first");
+                return;
+            }
+            const origin = userMarker.getPosition();
+            const url = `/api/directions?origin_lat=${origin.lat()}&origin_lng=${origin.lng()}&dest_lat=${destLat}&dest_lng=${destLng}`;
+            const resp = await fetch(url);
+            const data = await resp.json();
+            if (data.routes && data.routes.length > 0) {
+                // Open Google Maps URL for directions
+                const mapsUrl = `https://www.google.com/maps/dir/?api=1&origin=${origin.lat()},${origin.lng()}&destination=${destLat},${destLng}`;
+                window.open(mapsUrl, '_blank');
+            } else {
+                alert("Could not find route");
+            }
+        }
+
+        async function searchAddress() {
+            const address = document.getElementById("addressInput").value;
+            if (!address) return;
+            const geocodeUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=YOUR_API_KEY_HERE`;
+            const resp = await fetch(geocodeUrl);
+            const data = await resp.json();
+            if (data.results && data.results.length > 0) {
+                const loc = data.results[0].geometry.location;
+                map.setCenter(loc);
+                map.setZoom(14);
+                if (userMarker) userMarker.setMap(null);
+                userMarker = new google.maps.Marker({
+                    position: loc,
+                    map: map,
+                    title: address,
+                    icon: "http://maps.google.com/mapfiles/ms/icons/blue-dot.png"
+                });
+            } else {
+                alert("Address not found");
+            }
+        }
+
+        // Expose function for inline buttons
+        window.getDirectionsTo = getDirectionsTo;
+        window.initMap = initMap;
+        window.getUserLocation = getUserLocation;
+        window.searchAddress = searchAddress;
+    </script>
+    <!-- Replace YOUR_API_KEY with your actual Google Maps API key -->
+    <script src="https://maps.googleapis.com/maps/api/js?key=YOUR_API_KEY&callback=initMap"></script>
+</body>
+</html>
