@@ -43,7 +43,7 @@ def create_access_token(user_id: int, role: str) -> str: #yardimci fonk
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
 
-def get_current_user(db: Session, token: str = Depends(oauth2_bearer)):
+def get_current_user(db: Annotated[Session, Depends(get_db)], token: Annotated[str, Depends(oauth2_bearer)]):
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         user_id: int = payload.get("sub")
