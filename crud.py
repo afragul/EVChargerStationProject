@@ -1,14 +1,16 @@
-# crud.py
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, func
 from datetime import datetime, date, time, timedelta
 from typing import Optional, List
 import bcrypt
-from routers.auth import bcrypt_context
+
+from passlib.context import CryptContext
 
 import models
 import schemas
 
+
+bcrypt_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 def hash_password(password: str) -> str:
     return bcrypt_context.hash(password)

@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from datetime import date, time
 import models, schemas
 from database import get_db
-from auth import get_current_user 
+from routers.auth import get_current_user
 
 router = APIRouter(prefix="/reservations", tags=["Reservations"])
 
