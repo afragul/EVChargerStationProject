@@ -266,8 +266,11 @@ def is_charger_available(db: Session, charger_id: int, reservation_date: date, s
     ).first()
     return conflict is None
 
-def create_reservation(db: Session, reservation: schemas.ReservationCreate) -> models.Reservation:
-    db_reservation = models.Reservation(**reservation.dict(), status="active")
+
+def create_reservation(db: Session, reservation: schemas.ReservationCreate, driver_id: int) -> models.Reservation:
+    res_data = reservation.dict()
+    res_data.pop("vehicle_id", None)
+    db_reservation = models.Reservation(**res_data, driver_id=driver_id, status="active")
     db.add(db_reservation)
     db.commit()
     db.refresh(db_reservation)

@@ -25,14 +25,14 @@ token_dependency = Annotated[str, Depends(oauth2_bearer)]
 @router.post("/register" , response_model=schemas.UserResponse , status_code=status.HTTP_201_CREATED)
 def register(user_data: schemas.UserCreate, db:db_dependency):
     #email zaten var mi
-    existing=crud.get_user_by_email(user_data.email)
+    existing=crud.get_user_by_email(db,user_data.email)
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
 
     if user_data.role not in ["driver", "operator", "admin"]:
         raise HTTPException(status_code=400, detail="Invalid role")
 
-    user=crud.create_user(user_data)
+    user=crud.create_user(db,user_data)
 
     # Role göre alt tablo olustur
     if user_data.role == "driver":
