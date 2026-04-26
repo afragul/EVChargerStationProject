@@ -4,8 +4,39 @@ from typing import List
 import models, schemas
 from database import get_db
 from routers.auth import get_current_user
+from datetime import datetime
 
 router = APIRouter(prefix="/chargers", tags=["Chargers"])
+
+def cancel_active_reservations_for_offline_charger(charger_id: int, db: Session):
+    PREPAYMENT_AMOUNT = 100.0
+
+    # 1. Bu cihaza ait "active" durumdaki tüm rezervasyonları bul
+    active_reservations = db.query(models.Reservation).filter(
+        models.Reservation.charger_id == charger_id,
+        models.Reservation.status == "active"
+    ).all()
+
+    for res in active_reservations:
+        #Rezervasyonu iptal et
+        res.status = "cancelled"
+
+        #Sürücüyü bul ve cüzdanına iade yap
+        driver = db.query(models.Driver).filter(models.Driver.driver_id == res.driver_id).first()
+        if driver:
+            driver.wallet_balance += PREPAYMENT_AMOUNT
+
+            # c. İadeyi Payment (Ödeme Geçmişi) tablosuna kaydet
+            new_refund = models.Payment(
+                driver_id=driver.driver_id,
+                reservation_id=res.reservation_id,
+                amount=PREPAYMENT_AMOUNT,
+                type=models.PaymentType.refund, # Tipi "İade" olarak işaretliyoruz
+                timestamp=datetime.utcnow()
+            )
+            db.add(new_refund)
+
+    db.commit()
 
 # İstasyona ait cihazları listeleme
 @router.get("/station/{station_id}", response_model= List[schemas.ChargerResponse])
@@ -56,6 +87,10 @@ def update_charger_status(
     charger.status = new_enum_status
     db.commit()
     db.refresh(charger)
+
+    if new_enum_status.value == "offline":
+        cancel_active_reservations_for_offline_charger(charger_id, db)
+
 
     # TODO (Ekstra İşlem): Eğer cihaz "offline" yapıldıysa ve aktif rezervasyonu varsa,
     # REQ-O02 gereği burada rezervasyonları iptal eden bir fonksiyon çağrılmalıdır.
