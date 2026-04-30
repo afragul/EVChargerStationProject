@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Create Account | EV Charging Management</title>
+    <!-- CSS dosyası bağlama -->
+    <link rel="stylesheet" href="/static/style.css">
+    <!-- Modern yazı tipi -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <!-- Modern İkon Kütüphanesi -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+
+    <!-- Arka plan parlama efekti -->
+    <div class="background-overlay"></div>
+
+    <div class="login-container">
+        <form id="registerForm">
+            <div class="login-header">
+                <div class="brand-icon">⚡</div>
+                <h2>Join Us</h2>
+                <p>Start managing your EV stations today</p>
+            </div>
+
+            <div class="input-wrapper">
+                <div class="input-group">
+                    <label for="full_name">Full Name</label>
+                    <input type="text" id="full_name" name="full_name" required placeholder="John Doe">
+                </div>
+
+                <div class="input-group">
+                    <label for="email">Email Address</label>
+                    <input type="email" id="email" name="email" required placeholder="name@company.com">
+                </div>
+
+                <!-- Backend'in beklediği 'role' alanını varsayılan olarak gönderiyoruz -->
+                <input type="hidden" name="role" id="role" value="driver">
+
+                <div class="input-group">
+    <label for="reg_password">Password</label>
+    <div style="position: relative;">
+        <input type="password" id="reg_password" name="password" required placeholder="••••••••">
+        <i class="fas fa-eye" id="toggleRegisterPassword" style="position: absolute; right: 15px; top: 50%; transform: translateY(-50%); cursor: pointer;"></i>
+    </div>
+</div>
+            </div>
+
+            <button type="submit" id="registerBtn">Create Account</button>
+
+            <!-- Mesaj alanı -->
+            <div id="message"></div>
+
+            <div class="register-section">
+                <span>Already have an account?</span>
+                <a href="/login">Sign In</a>
+            </div>
+        </form>
+    </div>
+
+    <!-- JS dosyası -->
+    <script src="/static/auth.js"></script>
+</body>
+</html>

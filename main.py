@@ -1,5 +1,11 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request # Request buraya eklendi
 from fastapi.middleware.cors import CORSMiddleware
+
+#static ve template dosyaları için
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+
+
 
 # Modüllerimizi import ediyoruz
 import models
@@ -26,6 +32,11 @@ app=FastAPI(
     version="1.0.0"
 )
 
+# Statik dosyaları (JS/CSS) sisteme tanıtma
+app.mount("/static", StaticFiles(directory="static"), name="static")
+templates = Jinja2Templates(directory="templates")
+
+
 app.add_middleware( # front ile baglamak icin cors ayarlari
     CORSMiddleware,
     allow_origins=["*"],
@@ -46,10 +57,30 @@ app.include_router(stations.router)
 app.include_router(users.router)
 app.include_router(vehicles.router)
 
-@app.get("/", tags=["Root"])
+@app.get("/welcome", tags=["Root"])
 def root():
     return {
         "message": "EV Charging Station API'sine Hoş Geldiniz!",
         "docs_url": "/docs",
         "project_team": "Group 22"
     }
+
+
+#Harita burada yüklenecek
+@app.get("/")
+async def read_root(request: Request):
+    return templates.TemplateResponse(
+        request=request,
+        name="index.html",
+        context={}
+    )
+
+# login için
+@app.get("/login")
+async def get_login(request: Request):
+    return templates.TemplateResponse(request=request, name="login.html")
+
+#reg için
+@app.get("/register")
+async def get_register(request: Request):
+    return templates.TemplateResponse(request=request, name="register.html")

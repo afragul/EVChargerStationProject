@@ -36,10 +36,13 @@ class Token(BaseModel):
 
 
 #token üretildi
-def create_access_token(user_id: int, role: str) -> str: #yardimci fonk
+def create_access_token(user_id: int, role: str) -> str:
+    # Hata fırlatmak yerine, anahtar yoksa acil durum anahtarını kullan diyoruz.
+    current_key = SECRET_KEY or "grup22_acil_durum_anahtari"
+
     expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     payload = {"sub": str(user_id), "role": role, "exp": expire}
-    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+    return jwt.encode(payload, current_key, algorithm=ALGORITHM)
 
 
 def get_current_user(db: Annotated[Session, Depends(get_db)], token: Annotated[str, Depends(oauth2_bearer)]):

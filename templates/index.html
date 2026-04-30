@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Dashboard | EV Charging Map</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body style="display: block; overflow-y: auto;">
+
+    <div class="background-overlay"></div>
+
+    <header class="map-header">
+    <div class="brand">
+        <span class="brand-icon">⚡</span>
+        <h1>EV Stations Map</h1>
+    </div>
+    <div class="user-info">
+        <span id="welcomeMessage">Welcome...</span>
+        <div class="nav-actions">
+            <button onclick="window.location.href='/profile'" class="nav-btn profile">
+                <i class="fas fa-user"></i> Profile
+            </button>
+            <button onclick="logout()" class="nav-btn logout">
+                <i class="fas fa-sign-out-alt"></i> Logout
+            </button>
+        </div>
+    </div>
+</header>
+
+    <!-- Harita Alanı -->
+    <div id="map" style="height: calc(100vh - 80px); width: 100%;"></div>
+
+    <!-- Scriptler -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="/static/dashboard.js"></script>
+</body>
+</html>
