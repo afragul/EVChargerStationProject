@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 import models, schemas
 from database import get_db
 from routers.auth import get_current_user
@@ -92,7 +92,71 @@ def update_charger_status(
         cancel_active_reservations_for_offline_charger(charger_id, db)
 
 
-    # TODO (Ekstra İşlem): Eğer cihaz "offline" yapıldıysa ve aktif rezervasyonu varsa,
-    # REQ-O02 gereği burada rezervasyonları iptal eden bir fonksiyon çağrılmalıdır.
-
     return {"message": "Cihaz durumu başarıyla güncellendi.", "charger_id": charger.charger_id, "new_status": charger.status}
+
+# Yeni Şarj Cihazı Oluşturma (POST)
+@router.post("/", response_model=schemas.ChargerResponse)
+def create_charger(req: schemas.ChargerCreate, db: Session = Depends(get_db)):
+    # Önce böyle bir istasyon var mı diye kontrol edelim
+    station = db.query(models.Station).filter(models.Station.station_id == req.station_id).first()
+    if not station:
+        raise HTTPException(status_code=404, detail="Belirtilen station_id ile bir istasyon bulunamadı.")
+
+    new_charger = models.Charger(
+        station_id=req.station_id,
+        type=req.type,
+        power_kW=req.power_kW,
+        connector_type=req.connector_type,
+        price_per_kWh=req.price_per_kWh,
+        status="available" # Yeni eklenen cihaz varsayılan olarak boştur
+    )
+    db.add(new_charger)
+    db.commit()
+    db.refresh(new_charger)
+    return new_charger
+
+
+# 2.Tüm Şarj Cihazlarını Listeleme (Opsiyonel Station Filtreli)
+@router.get("/", response_model=List[schemas.ChargerResponse])
+def get_all_chargers(
+    station_id: Optional[int] = None, 
+    db: Session = Depends(get_db)
+):
+    query = db.query(models.Charger)
+    if station_id:
+        query = query.filter(models.Charger.station_id == station_id)
+        
+    return query.all()
+
+
+# 4.Tek Bir Cihazın Detayını Getirme
+@router.get("/{charger_id}", response_model=schemas.ChargerResponse)
+def get_charger(
+    charger_id: int, 
+    db: Session = Depends(get_db)
+):
+    charger = db.query(models.Charger).filter(models.Charger.charger_id == charger_id).first()
+    if not charger:
+        raise HTTPException(status_code=404, detail="Şarj cihazı bulunamadı.")
+    
+    return charger
+
+
+# 6. YENİ EKLENDİ: Cihazı Silme (DELETE)
+@router.delete("/{charger_id}")
+def delete_charger(
+    charger_id: int, 
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user) # Güvenlik için yetki ekledik
+):
+    if current_user.role not in ["operator", "admin"]:
+        raise HTTPException(status_code=403, detail="Bu işlem için yetkiniz bulunmamaktadır.")
+
+    charger = db.query(models.Charger).filter(models.Charger.charger_id == charger_id).first()
+    if not charger:
+        raise HTTPException(status_code=404, detail="Şarj cihazı bulunamadı.")
+    
+    db.delete(charger)
+    db.commit()
+    
+    return {"message": f"{charger_id} ID'li şarj cihazı başarıyla silindi."}
