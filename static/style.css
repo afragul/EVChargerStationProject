@@ -238,6 +238,32 @@ input::-ms-clear {
     box-shadow: 0 4px 15px rgba(220, 53, 69, 0.3);
     transform: translateY(-2px);
 }
+.signup-text {
+    margin-top: 20px !important;
+    display: flex;
+    flex-direction: column; /* Linkleri alt alta ama düzenli dizer */
+    gap: 8px;
+    align-items: center;
+}
+
+.operator-divider {
+    color: #666;
+    font-size: 0.8rem;
+    font-style: italic;
+    margin: 2px 0;
+}
+
+.apply-link {
+    color: #2ecc71 !important; /* Temadaki yeşil ile uyumlu */
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 0.95rem;
+}
+
+.apply-link:hover {
+    text-decoration: underline;
+    color: #27ae60 !important;
+}
 
 /* İkonların boyutu */
 .nav-btn i {
@@ -262,6 +288,255 @@ input::-ms-clear {
     align-items: center;
     margin-bottom: 25px;
     font-size: 0.85rem;
+}
+/* --- GENEL AYARLAR --- */
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    background-color: #0b110e;
+    font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    color: white;
+}
+
+.profile-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    padding: 20px;
+}
+
+/* --- KART TASARIMI --- */
+.profile-card {
+    background: rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(15px);
+    border: 1px solid rgba(46, 204, 113, 0.3);
+    border-radius: 24px;
+    padding: 35px;
+    width: 100%;
+    max-width: 420px; /* Yayılmayı engelleyen ideal genişlik */
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+    text-align: center;
+}
+
+/* --- NAVİGASYON (GERİ BUTONU) --- */
+.view-header {
+    display: flex;
+    justify-content: flex-start;
+    margin-bottom: 15px;
+}
+
+.btn-back {
+    background: transparent;
+    border: none;
+    color: #2ecc71;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: 0.3s ease;
+}
+
+.btn-back:hover {
+    color: #28a745;
+    transform: translateX(-3px);
+}
+
+/* --- PROFİL BAŞLIĞI VE AVATAR --- */
+.profile-header {
+    text-align: center;
+    margin-bottom: 25px;
+}
+
+.avatar-circle {
+    width: 75px;
+    height: 75px;
+    background: linear-gradient(135deg, #28a745, #2ecc71);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 15px;
+    font-size: 2rem;
+    font-weight: 800;
+    color: white;
+    box-shadow: 0 0 20px rgba(40, 167, 69, 0.3);
+}
+
+.role-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    background: rgba(255, 255, 255, 0.1);
+    margin-top: 5px;
+}
+
+.role-driver { background: #28a745; color: white; }
+.role-operator { background: #3498db; color: white; }
+.status-pending { background: #f1c40f; color: #000; }
+
+/* --- BİLGİ ALANLARI --- */
+.info-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 15px;
+    margin-bottom: 20px;
+}
+
+.info-block {
+    text-align: left;
+    padding: 10px;
+}
+
+.info-block label {
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    color: #666;
+    margin-bottom: 5px;
+    display: block;
+}
+
+.info-block span {
+    font-size: 0.9rem;
+    color: #ddd;
+}
+
+/* --- CÜZDAN VE ARAÇLAR --- */
+.wallet-box {
+    background: rgba(40, 167, 69, 0.1);
+    padding: 8px;
+    border-radius: 10px;
+    border: 1px solid rgba(40, 167, 69, 0.2);
+    text-align: center;
+}
+
+.vehicle-section { margin-top: 25px; }
+
+.section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.vehicle-grid {
+    background: rgba(0, 0, 0, 0.2);
+    padding: 12px;
+    border-radius: 16px;
+    min-height: 50px;
+}
+
+/* --- DİNAMİK DURUM ALANI (GİT-GEL ENGELLEYİCİ) --- */
+.status-section {
+    min-height: 110px; /* Kartın boyutu değişmesin diye rezerve alan */
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    margin-top: 20px;
+}
+
+/* --- FORM VE INPUTLAR --- */
+.input-group {
+    width: 100%;
+    margin-bottom: 18px;
+    text-align: left;
+}
+
+.input-group label {
+    font-size: 0.8rem;
+    color: #888;
+    margin-bottom: 6px;
+    display: block;
+}
+
+.input-group input,
+.input-group select {
+    width: 100%;
+    padding: 12px 14px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    color: white;
+    transition: 0.3s;
+}
+
+.input-group input:focus {
+    border-color: #2ecc71;
+    outline: none;
+    background: rgba(46, 204, 113, 0.05);
+}
+
+/* --- BUTONLAR --- */
+.btn-action {
+    width: 100%;
+    padding: 14px;
+    border-radius: 12px;
+    font-weight: 700;
+    font-size: 0.95rem;
+    cursor: pointer;
+    border: none;
+    transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    display: block;
+    text-align: center;
+}
+
+.btn-apply {
+    background-color: #28a745;
+    color: white;
+    box-shadow: 0 4px 15px rgba(40, 167, 69, 0.2);
+}
+
+.btn-apply:hover {
+    background-color: #2ecc71;
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(40, 167, 69, 0.4);
+}
+
+.btn-logout {
+    background: transparent;
+    border: 1px solid rgba(231, 76, 60, 0.4) !important;
+    color: #e74c3c;
+    margin-top: 15px;
+}
+
+.btn-logout:hover {
+    background: rgba(231, 76, 60, 0.1);
+    border-color: #e74c3c !important;
+}
+
+.btn-add-mini {
+    background: rgba(40, 167, 69, 0.2);
+    color: #2ecc71;
+    border: 1px solid #2ecc71;
+    padding: 4px 10px;
+    border-radius: 8px;
+    font-size: 0.75rem;
+    font-weight: bold;
+    cursor: pointer;
+    transition: 0.2s;
+}
+
+.btn-add-mini:hover {
+    background: #28a745;
+    color: white;
+}
+
+/* --- ANİMASYONLAR --- */
+#profileView, #addView {
+    animation: fadeIn 0.4s ease-out;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
 }
 /* otomatik doldurma sırasında arka planın değişmesini engelleme*/
 input:-webkit-autofill,

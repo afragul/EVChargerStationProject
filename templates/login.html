@@ -51,12 +51,20 @@
             <!-- Hata veya bilgi mesajları -->
             <div id="message"></div>
 
-            <div class="register-section">
-                <span>Don't have an account yet?</span>
-                <a href="/register">Create New Account</a>
-            </div>
-        </form>
+<div class="register-section">
+    <div class="user-register">
+        <span>Don't have an account yet?</span>
+        <a href="/register">Create New Account</a>
     </div>
+
+    <div class="operator-divider">or</div>
+
+    <div class="operator-apply">
+        <span>Want to manage a station?</span>
+        <a href="/operator-apply" class="apply-link">Apply as Operator</a>
+    </div>
+</div>
+        </form>
 
     <!-- Backend bağlantısını sağlayan JavaScript -->
     <script src="/static/auth.js"></script>

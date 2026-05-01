@@ -84,3 +84,12 @@ async def get_login(request: Request):
 @app.get("/register")
 async def get_register(request: Request):
     return templates.TemplateResponse(request=request, name="register.html")
+
+#profil için
+@app.get("/profile")
+async def get_profile(request: Request):
+    return templates.TemplateResponse(
+        request=request,
+        name="profile.html",
+        context={} # Artık buraya user göndermemize gerek yok
+    )
