@@ -10,13 +10,13 @@ import models
 import schemas
 
 
-bcrypt_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 def hash_password(password: str) -> str:
-    return bcrypt_context.hash(password)
+    return pwd_context.hash(password)
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return bcrypt_context.verify(plain, hashed)
+    return pwd_context.verify(plain, hashed)
 
 
 # ---------- USER ----------

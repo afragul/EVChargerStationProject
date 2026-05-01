@@ -12,7 +12,7 @@ alembic
 python-dotenv
 
 # Güvenlik ve Şifreleme (Bcrypt ve JWT)
-passlib[bcrypt]
+bcrypt==4.0.1
 python-jose[cryptography]
 
 # Veri Doğrulama (Pydantic ve E-posta kontrolü için)
