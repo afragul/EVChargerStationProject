@@ -551,3 +551,181 @@ input:-webkit-autofill:active {
 .remember-me { display: flex; align-items: center; gap: 8px; color: #bbb; cursor: pointer; }
 .forgot-link, .register-section a { color: #28a745; text-decoration: none; font-weight: 600; }
 .register-section { text-align: center; margin-top: 25px; color: #888; font-size: 0.95rem; }
+
+
+/* =========================================================
+   MODAL TASARIMLARI (Rezervasyon & Custom Alert)
+========================================================= */
+
+/* Arka plan karartması ve merkeze hizalama */
+.custom-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.7); /* Arkası karartılmış */
+    backdrop-filter: blur(5px);     /* Modern cam efekti */
+    z-index: 9999;                  /* Haritanın üstünde çıksın */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    animation: fadeInModal 0.3s ease-out;
+}
+
+/* Modal Kutusu */
+.custom-modal-box {
+    background: #1a2922; /* Koyu yeşil-siyah arası şık arka plan */
+    border: 1px solid rgba(40, 167, 69, 0.4);
+    border-radius: 20px;
+    width: 380px;
+    padding: 30px;
+    box-shadow: 0 15px 40px rgba(0, 0, 0, 0.8);
+    color: white;
+}
+
+/* Alert Modalı için biraz daha dar bir kutu */
+.alert-box {
+    width: 320px;
+    text-align: center;
+}
+
+/* Modal Başlığı */
+.modal-title {
+    margin-top: 0;
+    margin-bottom: 20px;
+    color: #2ecc71; /* Belirgin yeşil vurgu */
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    padding-bottom: 12px;
+    font-size: 1.3rem;
+    font-weight: 700;
+}
+
+/* Input ve Select Form Elemanları */
+.form-group {
+    margin-bottom: 15px;
+    text-align: left;
+}
+
+.form-group label {
+    display: block;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #b3c5bd;
+    margin-bottom: 6px;
+}
+
+.form-input {
+    width: 100%;
+    padding: 12px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 10px;
+    color: white;
+    font-size: 1rem;
+    transition: all 0.3s ease;
+}
+
+/* Select elementinin içi (option'lar) karanlık modda okunabilsin diye */
+.form-input option {
+    background-color: #1a2922;
+    color: white;
+}
+
+.form-input:focus {
+    border-color: #28a745;
+    outline: none;
+    box-shadow: 0 0 10px rgba(40, 167, 69, 0.2);
+    background: rgba(40, 167, 69, 0.05);
+}
+
+/* Yan yana duran saat inputları için */
+.time-group {
+    display: flex;
+    justify-content: space-between;
+    gap: 15px;
+}
+
+.half-width {
+    width: 48%;
+}
+
+/* Provizyon Uyarısı */
+.provision-note {
+    font-size: 0.75rem;
+    color: #95a5a6;
+    line-height: 1.4;
+    margin-bottom: 20px;
+    font-style: italic;
+}
+
+/* Dolu saatleri gösteren kırmızı bilgi kutusu */
+.schedule-box {
+    margin-bottom: 15px;
+    padding: 12px;
+    background: rgba(231, 76, 60, 0.1);
+    border: 1px solid rgba(231, 76, 60, 0.3);
+    border-radius: 10px;
+}
+
+.schedule-box label {
+    display: block;
+    font-size: 0.85rem;
+    font-weight: bold;
+    color: #e74c3c;
+    margin-bottom: 5px;
+}
+
+.occupied-times {
+    font-size: 0.85rem;
+    color: #ff7675;
+    font-weight: bold;
+}
+
+/* Modal Buton Bölümü */
+.modal-actions {
+    display: flex;
+    justify-content: space-between;
+    gap: 15px;
+    margin-top: 10px;
+}
+
+/* Modal Buton Tasarımları */
+.btn-cancel, .btn-confirm {
+    flex: 1;
+    padding: 12px 0;
+    border: none;
+    border-radius: 10px;
+    font-size: 1rem;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.btn-cancel {
+    background: rgba(255, 255, 255, 0.1);
+    color: #ddd;
+}
+
+.btn-cancel:hover {
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+}
+
+.btn-confirm {
+    background: #28a745;
+    color: white;
+    box-shadow: 0 4px 15px rgba(40, 167, 69, 0.3);
+}
+
+.btn-confirm:hover {
+    background: #2ecc71;
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(40, 167, 69, 0.5);
+}
+
+/* Animasyon */
+@keyframes fadeInModal {
+    from { opacity: 0; transform: scale(0.95); }
+    to { opacity: 1; transform: scale(1); }
+}

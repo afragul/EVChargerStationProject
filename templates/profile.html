@@ -3,14 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <title>User Profile - EV Charging</title>
-    <link rel="stylesheet" href="/static/style.css?v=2">
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
 <body>
 
 <div class="profile-container">
     <div class="profile-card">
 
-        <!-- BÖLÜM 1: PROFİL GÖRÜNÜMÜ -->
+        <!-- SECTION 1: PROFILE VIEW -->
         <div id="profileView">
             <div class="view-header">
                 <button class="btn-back" onclick="window.location.href='/'">
@@ -31,9 +32,9 @@
                 </div>
                 <div class="info-block">
                     <label>Wallet Balance</label>
-                    <div class="wallet-box" style="display: flex; align-items: center; gap: 10px;">
+                    <div class="wallet-box" style="display: flex; align-items: center; justify-content: center; gap: 10px;">
                         <div><span id="walletBalance">0.00</span> ₺</div>
-                        <button onclick="topUpWallet()" style="background: #28a745; color: white; border: none; border-radius: 4px; padding: 4px 10px; cursor: pointer; font-size: 12px; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">+ Yükle</button>
+                        <button onclick="openTopUpModal()" style="background: #28a745; color: white; border: none; border-radius: 4px; padding: 4px 10px; cursor: pointer; font-size: 12px; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">+ Top Up</button>
                     </div>
                 </div>
             </div>
@@ -46,7 +47,16 @@
                 <div id="vehicleList" class="vehicle-grid"></div>
             </div>
 
-            <!-- Account Status alanı JS ile dolacak -->
+            <!-- FAVORITE STATIONS SECTION -->
+            <div class="vehicle-section" style="margin-top: 25px;">
+                <div class="section-header">
+                    <h3>Favorite Stations</h3>
+                </div>
+                <div id="favoriteStationsList" class="vehicle-grid">
+                    <p style="color: #666; font-size: 0.9rem; text-align: center; width: 100%;">Loading favorites...</p>
+                </div>
+            </div>
+
             <div id="statusContent" class="status-section"></div>
 
             <button class="btn-logout btn-action" onclick="handleLogout()" style="margin-top: 20px;">
@@ -54,113 +64,64 @@
             </button>
         </div>
 
-        <!-- BÖLÜM 2: ARAÇ EKLEME GÖRÜNÜMÜ -->
+        <!-- SECTION 2: ADD VEHICLE VIEW -->
         <div id="addView" style="display: none;">
             <div class="view-header">
                 <button class="btn-back" onclick="toggleVehicleView(false)">
                     <span class="back-icon">←</span> Back
                 </button>
             </div>
-
             <div class="profile-header" style="margin-top: 10px;">
                 <h2 style="font-size: 1.3rem;">Add New Vehicle</h2>
-                <p style="color: #666; font-size: 0.85rem;">Enter your vehicle details</p>
             </div>
-
             <form id="vehicleForm">
-                <div class="input-group">
-                    <label>Brand</label>
-                    <input type="text" id="vBrand" placeholder="e.g. Tesla" required>
-                </div>
-                <div class="input-group">
-                    <label>Model</label>
-                    <input type="text" id="vModel" placeholder="e.g. Model 3" required>
-                </div>
-                <div class="input-group">
-                    <label>Plate Number</label>
-                    <input type="text" id="vPlate" placeholder="34 ABC 123" required>
-                </div>
-
+                <div class="input-group"><label>Brand</label><input type="text" id="vBrand" placeholder="e.g. Tesla" required></div>
+                <div class="input-group"><label>Model</label><input type="text" id="vModel" placeholder="e.g. Model 3" required></div>
+                <div class="input-group"><label>Plate Number</label><input type="text" id="vPlate" placeholder="34 ABC 123" required></div>
                 <div class="info-row">
-                    <div class="input-group">
-                        <label>Battery (kWh)</label>
-                        <input type="number" id="vBattery" placeholder="75" required>
-                    </div>
+                    <div class="input-group"><label>Battery (kWh)</label><input type="number" id="vBattery" placeholder="75" required></div>
                     <div class="input-group">
                         <label>Connector</label>
-                        <select id="vConnector">
-                            <option value="Type 2">Type 2</option>
-                            <option value="CCS">CCS</option>
-                            <option value="CHAdeMO">CHAdeMO</option>
+                        <select id="vConnector" class="form-input" style="padding: 12px;">
+                            <option value="Type 2">Type 2</option><option value="CCS">CCS</option><option value="CHAdeMO">CHAdeMO</option>
                         </select>
                     </div>
                 </div>
-
                 <div style="margin-top: 20px;">
                     <button type="submit" class="btn-action btn-apply">Save Vehicle</button>
-                    <button type="button" class="btn-action btn-logout" style="border-color: #444; color: #888;" onclick="toggleVehicleView(false)">
-                        Cancel
-                    </button>
+                    <button type="button" class="btn-action btn-logout" style="border-color: #444; color: #888;" onclick="toggleVehicleView(false)">Cancel</button>
                 </div>
             </form>
         </div>
-
     </div>
 </div>
 
-<script src="/static/script.js?v=3"></script>
+<!-- TOP UP MODAL -->
+<div id="topUpModal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.7); backdrop-filter: blur(5px); z-index: 9999; justify-content: center; align-items: center;">
+    <div style="background: #1a2922; border: 1px solid rgba(40, 167, 69, 0.4); border-radius: 20px; width: 320px; padding: 30px; box-shadow: 0 15px 40px rgba(0, 0, 0, 0.8); color: white; text-align: center;">
+        <h3 style="color: #2ecc71; border-bottom: 1px solid rgba(255, 255, 255, 0.1); padding-bottom: 12px; margin-top: 0; margin-bottom: 20px; font-size: 1.3rem;">Wallet Top Up</h3>
+        <form onsubmit="submitTopUp(event)">
+            <div style="text-align: left; margin-bottom: 25px;">
+                <label style="display: block; font-size: 0.85rem; color: #b3c5bd; margin-bottom: 6px; font-weight: 600;">Amount (₺)</label>
+                <input type="number" id="topUpAmount" placeholder="500" min="1" required style="width: 100%; padding: 12px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 10px; color: white; font-size: 1rem; box-sizing: border-box; outline: none;">
+            </div>
+            <div style="display: flex; gap: 12px; width: 100%;">
+                <button type="button" onclick="closeTopUpModal()" style="flex: 1 1 0px; margin: 0; height: 45px; background-color: #e74c3c; color: white; border: none; border-radius: 10px; font-size: 1rem; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center;">Cancel</button>
+                <button type="submit" style="flex: 1 1 0px; margin: 0; height: 45px; background-color: #28a745; color: white; border: none; border-radius: 10px; font-size: 1rem; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center;">Confirm</button>
+            </div>
+        </form>
+    </div>
+</div>
 
-<!-- İŞTE EKSİK OLAN VE BUTONU ÇALIŞTIRACAK KOD BURASI -->
-<script>
-window.topUpWallet = async function() {
-    // 1. Kullanıcıdan tutar iste
-    const amountStr = prompt("Yüklemek istediğiniz tutarı girin (₺):", "500");
-    if (!amountStr) return; // İptal'e basarsa çık
+<!-- CUSTOM ALERT MODAL -->
+<div id="customAlertModal" class="custom-modal-overlay" style="display: none;">
+    <div class="custom-modal-box alert-box">
+        <h3 id="customAlertTitle" class="modal-title alert-title">Notification</h3>
+        <p id="customAlertMessage" class="alert-message"></p>
+        <div class="modal-actions"><button onclick="closeCustomAlert()" class="btn-confirm alert-btn" style="width: 100%;">OK</button></div>
+    </div>
+</div>
 
-    const amount = parseFloat(amountStr);
-    if (isNaN(amount) || amount <= 0) {
-        alert("Lütfen geçerli bir sayı girin.");
-        return;
-    }
-
-    // 2. Kullanıcı ID'sini kontrol et
-    if (!window.currentUserId) {
-        alert("Kullanıcı kimliği bulunamadı. Lütfen sayfayı yenileyip tekrar deneyin.");
-        return;
-    }
-
-    const token = localStorage.getItem("token");
-
-    // 3. Backend'e gönderilecek veriyi hazırla
-    const payload = {
-        amount: amount,
-        type: "TopUp",
-        driver_id: window.currentUserId
-    };
-
-    try {
-        const response = await fetch("/payments/topup", {
-            method: "POST",
-            headers: {
-                "Authorization": `Bearer ${token}`,
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify(payload)
-        });
-
-        if (response.ok) {
-            alert(`🎉 ${amount} ₺ başarıyla cüzdanınıza yüklendi!`);
-            window.location.reload(); // Bakiyeyi görmek için sayfayı yenile
-        } else {
-            const errorData = await response.json();
-            alert("Yükleme başarısız: " + (errorData.detail || "Bilinmeyen hata"));
-        }
-    } catch (error) {
-        console.error("Yükleme hatası:", error);
-        alert("Sunucuya bağlanılamadı.");
-    }
-};
-</script>
-
+<script src="/static/script.js?v=7"></script>
 </body>
 </html>

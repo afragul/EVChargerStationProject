@@ -2,8 +2,20 @@ let map;
 let directionsService;
 let directionsRenderer;
 let userLocation = null;
+let userVehicles = [];
+let favoriteStations = [];
+let selectedChargerId = null;
 
-let userVehicles = []; // Kullanıcının araçlarını tutacağımız liste
+// --- CUSTOM ALERT LOGIC FOR MAP ---
+window.showCustomAlert = function(message, title = "Notification") {
+    document.getElementById("customAlertTitle").innerText = title;
+    document.getElementById("customAlertMessage").innerText = message;
+    document.getElementById("customAlertModal").style.display = "flex";
+};
+
+window.closeCustomAlert = function() {
+    document.getElementById("customAlertModal").style.display = "none";
+};
 
 async function initMap() {
     map = new google.maps.Map(document.getElementById("map"), {
@@ -22,25 +34,22 @@ async function initMap() {
     directionsRenderer = new google.maps.DirectionsRenderer();
     directionsRenderer.setMap(map);
 
-    console.log("Google Maps Başarıyla Yüklendi!");
+    console.log("Google Maps Loaded Successfully!");
     initDashboard();
 }
 
 async function initDashboard() {
-    // Token hiç yoksa direkt login'e at
     const token = localStorage.getItem('token');
     if (!token) {
         window.location.href = "/login";
-        return; // Kodun devamını çalıştırma
+        return;
     }
-    await fetchUserVehicles(token); //önce araclari cek
-
-    // Token varsa normal işleyişe devam et
+    await fetchUserVehicles(token);
+    await fetchFavoriteStations(token);
     loadStations();
     getUserLocation();
 }
 
-// Araçları arka planda çeken fonksiyon
 async function fetchUserVehicles(token) {
     try {
         const response = await fetch('/vehicles/me', {
@@ -49,19 +58,39 @@ async function fetchUserVehicles(token) {
         });
         if (response.ok) {
             userVehicles = await response.json();
-            console.log("Kullanıcının araçları yüklendi:", userVehicles);
         }
     } catch (error) {
-        console.error("Araçlar yüklenirken hata:", error);
+        console.error("Error loading vehicles:", error);
+    }
+}
+
+async function fetchFavoriteStations(token) {
+    try {
+        const response = await fetch('/stations/favorites/me', {
+            method: 'GET',
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (response.ok) {
+            const data = await response.json();
+            favoriteStations = data.map(s => s.station_id);
+        }
+    } catch (error) {
+        console.error("Error loading favorite stations:", error);
     }
 }
 
 async function loadStations() {
     try {
         const token = localStorage.getItem('token');
-        console.log("Sunucuya gönderilecek Token:", token); // Bunu konsolda görmeliyiz
 
-        // Token ile beraber Backend'den verileri çekiyoruz
+        // 1. Yol tarifi kilidi için kullanıcının aktif rezervasyonlarını çek
+        const resResponse = await fetch('/reservations/me', {
+            method: 'GET',
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const myReservations = resResponse.ok ? await resResponse.json() : [];
+
+        // 2. İstasyonları çek
         const response = await fetch('/stations/', {
             method: 'GET',
             headers: {
@@ -70,129 +99,119 @@ async function loadStations() {
             }
         });
 
-        if (response.status === 401) {
-            console.warn("Oturum süresi dolmuş, çıkış yapılıyor...");
-            localStorage.removeItem('token'); // O bozuk anahtarı çöpe at
-            window.location.href = "/login";  // Login'e geri gönder
-            return;
-        }
-
-        if (!response.ok) {
-            console.error("İstasyonlar sunucudan çekilemedi. Hata kodu:", response.status);
-            return;
-        }
-
+        if (!response.ok) return;
         const stations = await response.json();
 
         stations.forEach(station => {
-            let stationStatus = "offline";
-            let hasAvailable = false;
-            let hasOccupied = false;
+            let isStationCompatible = false;
 
-            if (station.chargers && station.chargers.length > 0) {
-                station.chargers.forEach(charger => {
-                    if (charger.status === "available") hasAvailable = true;
-                    if (charger.status === "occupied") hasOccupied = true;
-                });
+            // Kullanıcının bu istasyonda aktif bir rezervasyonu var mı?
+            const hasActiveBooking = myReservations.some(res =>
+                station.chargers.some(c => c.charger_id === res.charger_id) &&
+                (res.status === "active" || res.status === "confirmed")
+            );
 
-                if (hasAvailable) {
-                    stationStatus = "available";
-                } else if (hasOccupied) {
-                    stationStatus = "occupied";
+            let chargersHtml = "";
+            station.chargers.forEach(c => {
+                const isCompatible = userVehicles.some(v => v.connector_type === c.connector_type);
+                if (isCompatible) isStationCompatible = true;
+
+                let actionHtml = "";
+                if (c.status === "available" && isCompatible) {
+                    actionHtml = `<button onclick="window.openReservationModal(${c.charger_id}, '${c.connector_type}')" style="background:#28a745; color:white; border:none; padding:4px 8px; cursor:pointer; border-radius: 4px; font-size: 11px; font-weight:bold;">Reserve</button>`;
+                } else if (!isCompatible) {
+                    actionHtml = `<span style="color:#e74c3c; font-size:11px; font-weight:bold;">Incompatible</span>`;
+                } else {
+                    actionHtml = `<span style="color:#888; font-size:11px; font-weight:bold;">Occupied</span>`;
                 }
+
+                chargersHtml += `
+                    <div style="display:flex; justify-content:space-between; margin-bottom:8px; align-items:center; border-bottom:1px solid #eee; padding-bottom:4px; color: #2c3e50 !important;">
+                        <span style="font-size:12px;">${c.power_kW}kW <b>${c.connector_type}</b></span> 
+                        ${actionHtml}
+                    </div>`;
+            });
+
+            // --- YOL TARİFİ BUTONU MANTIĞI ---
+            let directionsBtnHtml = "";
+            if (!hasActiveBooking) {
+                directionsBtnHtml = `<button onclick="window.showCustomAlert('You must have an active reservation at this station to get directions.', 'Reservation Required')" style="background:#95a5a6; color:white; border:none; padding:12px; width:100%; cursor:not-allowed; border-radius: 8px; font-weight:bold; font-size:13px;">🔒 Reserve to Get Directions</button>`;
             } else {
-                stationStatus = station.status || "available";
+                directionsBtnHtml = `<button onclick="window.getDirections(${station.latitude}, ${station.longitude})" style="background:#3498db; color:white; border:none; padding:12px; width:100%; cursor:pointer; border-radius: 8px; font-weight:bold; font-size:13px;">📍 Get Directions</button>`;
             }
 
-            let markerColor = "http://maps.google.com/mapfiles/ms/icons/green-dot.png";
-            if (stationStatus === "occupied") markerColor = "http://maps.google.com/mapfiles/ms/icons/yellow-dot.png";
-            if (stationStatus === "offline") markerColor = "http://maps.google.com/mapfiles/ms/icons/red-dot.png";
+            const isFavorite = favoriteStations.includes(station.station_id);
+            const heartColor = isFavorite ? "#e74c3c" : "#bdc3c7";
+
+            const infoWindow = new google.maps.InfoWindow({
+                content: `
+                    <div style="width:240px; padding:5px; color: #2c3e50 !important; font-family: 'Segoe UI', sans-serif;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                            <b style="font-size:15px; color: #2c3e50 !important;">${station.name}</b>
+                            <i id="h-${station.station_id}" class="fas fa-heart" onclick="window.toggleFavorite(${station.station_id})" style="color:${heartColor}; cursor:pointer; font-size:18px;"></i>
+                        </div>
+                        <p style="margin: 0 0 10px 0; font-size: 11px; color: #555 !important;">${station.address}</p>
+                        
+                        <div style="margin-bottom:12px; background:#f8f9fa; padding:10px; border-radius:8px; border: 1px solid #eee;">
+                            <label style="font-size:10px; color:#95a5a6; font-weight:bold; display:block; margin-bottom:5px;">CHARGERS</label>
+                            ${chargersHtml}
+                        </div>
+                        ${directionsBtnHtml}
+                    </div>`
+            });
 
             const marker = new google.maps.Marker({
                 position: { lat: station.latitude, lng: station.longitude },
                 map: map,
-                title: station.name,
-                icon: markerColor
+                icon: "http://maps.google.com/mapfiles/ms/icons/green-dot.png"
             });
-
-            // --- BİLGİ PENCERESİ İÇİN ŞARJ CİHAZLARI LİSTESİ OLUŞTURMA ---
-            let chargersHtml = "";
-
-            if (station.chargers && station.chargers.length > 0) {
-                station.chargers.forEach(c => {
-                    // Kullanıcının araçlarından herhangi birinin soketi bu cihazla uyuşuyor mu?
-                    const isCompatible = userVehicles.some(v => v.connector_type === c.connector_type);
-
-                    let actionHtml = "";
-
-                    if (c.status === "available" && isCompatible) {
-                        // Soket uyumlu ve cihaz boşsa Buton göster
-                        actionHtml = `<button onclick="openReservationModal(${c.charger_id}, '${c.connector_type}')" style="background:#28a745; color:white; border:none; padding:4px 8px; cursor:pointer; border-radius: 4px; font-size: 12px;"> Rezerve Et</button>`;
-                    } else if (c.status === "available" && !isCompatible) {
-                        // Cihaz boş ama soket uymuyorsa Kırmızı uyarı ver
-                        actionHtml = `<span style="color:#d9534f; font-size:12px; font-weight:bold;"> Uyumsuz Soket</span>`;
-                    } else {
-                        // Cihaz doluysa veya bozuksa durumunu yazdır
-                        actionHtml = `<span style="color:#888; font-size:12px;">⏳ ${c.status.toUpperCase()}</span>`;
-                    }
-
-                    // Cihazın listeye eklenmesi
-                    chargersHtml += `
-                        <div style="border-bottom:1px solid #eee; padding:6px 0; display:flex; justify-content:space-between; align-items:center;">
-                            <span style="font-size:13px;"> ${c.power_kW}kW <b>${c.connector_type}</b></span>
-                            ${actionHtml}
-                        </div>
-                    `;
-                });
-            } else {
-                chargersHtml = "<p style='font-size:12px; color:#888;'>Bu istasyonda henüz cihaz yok.</p>";
-            }
-
-            // --- INFO WINDOW TASARIMI ---
-            const infoWindow = new google.maps.InfoWindow({
-                content: `
-                    <div style="color: #333; padding: 5px; width: 240px;">
-                        <b style="font-size: 15px; color:#2c3e50;">${station.name}</b><br>
-                        <p style="margin: 4px 0 10px 0; font-size: 12px; color: #7f8c8d;">${station.address}</p>
-                        
-                        <div style="background:#f8f9fa; padding:8px; border-radius:6px; margin-bottom:10px;">
-                            <b style="font-size: 12px; color:#34495e;">ŞARJ CİHAZLARI</b>
-                            <div style="margin-top:5px;">
-                                ${chargersHtml}
-                            </div>
-                        </div>
-
-                        <button onclick="window.getDirections(${station.latitude}, ${station.longitude})" style="background:#3498db; color:white; border:none; padding:8px; width:100%; cursor:pointer; border-radius: 4px; font-weight:bold;">📍 Yol Tarifi Çiz</button>
-                    </div>
-                `
-            });
-
 
             marker.addListener("click", () => {
                 infoWindow.open(map, marker);
             });
         });
 
-        console.log(`${stations.length} adet istasyon başarıyla haritaya yüklendi!`);
-
     } catch (err) {
-        console.error("İstasyon verileri yüklenirken ağ hatası oluştu:", err);
+        console.error("Network error while loading stations:", err);
     }
 }
+
+window.toggleFavorite = async function(stationId) {
+    const token = localStorage.getItem("token");
+    const isFav = favoriteStations.includes(stationId);
+
+    try {
+        const response = await fetch(`/stations/${stationId}/favorite`, {
+            method: isFav ? "DELETE" : "POST",
+            headers: { "Authorization": `Bearer ${token}` }
+        });
+
+        if (response.ok) {
+            if (isFav) {
+                favoriteStations = favoriteStations.filter(id => id !== stationId);
+            } else {
+                favoriteStations.push(stationId);
+            }
+            const heart = document.getElementById(`h-${stationId}`);
+            if (heart) heart.style.color = isFav ? "#bdc3c7" : "#e74c3c";
+        } else {
+            const err = await response.json();
+            showCustomAlert(err.detail || "Action failed.", "Error");
+        }
+    } catch (e) {
+        console.error("Favorite toggle error:", e);
+    }
+};
 
 function getUserLocation() {
     if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition((position) => {
-            userLocation = {
-                lat: position.coords.latitude,
-                lng: position.coords.longitude,
-            };
-
+            userLocation = { lat: position.coords.latitude, lng: position.coords.longitude };
             new google.maps.Marker({
                 position: userLocation,
                 map: map,
                 icon: "http://maps.google.com/mapfiles/ms/icons/blue-dot.png",
-                title: "Konumunuz"
+                title: "Your Location"
             });
             map.setCenter(userLocation);
         });
@@ -201,113 +220,55 @@ function getUserLocation() {
 
 window.getDirections = function(destLat, destLng) {
     if (!userLocation) {
-        alert("Lütfen önce konum erişimine izin verin.");
+        showCustomAlert("Please allow location access first.", "Location Error");
         return;
     }
-
     const request = {
         origin: userLocation,
         destination: { lat: destLat, lng: destLng },
         travelMode: 'DRIVING'
     };
-
     directionsService.route(request, function(result, status) {
         if (status === 'OK') {
             directionsRenderer.setDirections(result);
         } else {
-            alert("Rota hesaplanamadı. Hata: " + status);
+            showCustomAlert("Directions failed: " + status, "Routing Error");
         }
     });
 };
 
-// Seçilen şarj cihazının ID'sini hafızada tutmak için global değişken
-let selectedChargerId = null;
-
-//  Modalı Açma Fonksiyonu
-// Modalı Açma Fonksiyonu
 window.openReservationModal = function(chargerId, connectorType) {
     selectedChargerId = chargerId;
-
     const modal = document.getElementById("reservationModal");
     modal.style.display = "flex";
 
-    // Select kutusunu bul ve içini temizle
     const vehicleSelect = document.getElementById("resVehicle");
     vehicleSelect.innerHTML = "";
-
-    // Uyuşan araçlarımızı filtrele
     const compatibleVehicles = userVehicles.filter(v => v.connector_type === connectorType);
 
-    // Filtrelenen araçları açılır listeye (select) ekle
-    compatibleVehicles.forEach(v => {
-        const option = document.createElement("option");
-        option.value = v.vehicle_id;
-        option.text = `${v.brand} ${v.model} (${v.plate_number})`;
-        vehicleSelect.appendChild(option);
-    });
-
-    const dateInput = document.getElementById("resDate"); // dateInput'u tanımladık!
-    const today = new Date().toISOString().split('T')[0];
-
-    dateInput.value = today; // Değeri atadık
-
-    // Tarih değiştiğinde saatleri tekrar yükle
-    dateInput.onchange = () => loadSchedule(chargerId, dateInput.value);
-
-    // Modal açılır açılmaz bugünün saatlerini yükle
-    loadSchedule(chargerId, today);
-};
-
-async function loadSchedule(chargerId, dateStr) {
-    const token = localStorage.getItem("token");
-    const scheduleBox = document.getElementById("scheduleBox");
-    const timesList = document.getElementById("occupiedTimesList");
-
-    try {
-        const response = await fetch(`/reservations/charger/${chargerId}/schedule?target_date=${dateStr}`, {
-            method: "GET",
-            headers: { "Authorization": `Bearer ${token}` }
+    if (compatibleVehicles.length === 0) {
+        vehicleSelect.innerHTML = "<option disabled selected>No compatible vehicle</option>";
+    } else {
+        compatibleVehicles.forEach(v => {
+            const o = document.createElement("option");
+            o.value = v.vehicle_id;
+            o.text = `${v.brand} ${v.model} (${v.plate_number})`;
+            vehicleSelect.appendChild(o);
         });
-
-        if (response.ok) {
-            const reservations = await response.json();
-            scheduleBox.style.display = "block"; // Kutuyu görünür yap
-
-            if (reservations.length > 0) {
-                // Eğer dolu saat varsa, kutuyu kırmızı yap ve saatleri listele
-                scheduleBox.style.background = "#fdf2f2";
-                scheduleBox.style.borderColor = "#f5c6c6";
-                timesList.innerHTML = reservations.map(r => `⏳ ${r.start_time} - ${r.end_time} arası DOLU`).join("<br>");
-            } else {
-                // Eğer o gün hiç rezervasyon yoksa, kutuyu yeşil yapıp müjdeyi ver
-                scheduleBox.style.background = "#eafaf1";
-                scheduleBox.style.borderColor = "#a9dfbf";
-                timesList.innerHTML = "<span style='color:#27ae60;'>🎉 Harika! Bu tarihte tüm saatler müsait.</span>";
-            }
-        }
-    } catch(e) {
-        console.error("Saatler çekilemedi", e);
     }
-}
-
-
-// Modalı Kapatma Fonksiyonu
-window.closeReservationModal = function() {
-    document.getElementById("reservationModal").style.display = "none";
+    const today = new Date().toISOString().split('T')[0];
+    document.getElementById("resDate").value = today;
 };
 
-// Formu Gönderme (Backend'e İstek Atma) Fonksiyonu
+window.closeReservationModal = () => document.getElementById("reservationModal").style.display = "none";
+
 window.submitReservation = async function(e) {
-    e.preventDefault(); // Sayfanın yenilenmesini engelle
-
+    e.preventDefault();
     const token = localStorage.getItem("token");
-
-    // Formdan verileri topla
     const payload = {
         charger_id: selectedChargerId,
         vehicle_id: parseInt(document.getElementById("resVehicle").value),
         date: document.getElementById("resDate").value,
-        // Backend saatleri HH:MM:SS formatında bekleyebilir, sonuna :00 ekliyoruz
         start_time: document.getElementById("resStartTime").value + ":00",
         end_time: document.getElementById("resEndTime").value + ":00"
     };
@@ -315,27 +276,19 @@ window.submitReservation = async function(e) {
     try {
         const response = await fetch("/reservations/", {
             method: "POST",
-            headers: {
-                "Authorization": `Bearer ${token}`,
-                "Content-Type": "application/json"
-            },
+            headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
             body: JSON.stringify(payload)
         });
 
-        const data = await response.json();
-
         if (response.ok) {
-            alert(" Rezervasyon başarıyla oluşturuldu!");
-            closeReservationModal();
-            // Haritayı yenile ki istasyon/cihaz durumları (Dolu/Boş) güncellensin
-            loadStations();
+            window.closeReservationModal();
+            window.showCustomAlert("Reservation created successfully!", "Success", () => window.location.reload());
         } else {
-            // Eğer cüzdanda 100 TL yoksa veya saat çakışıyorsa backend'den gelen hatayı göster
-            alert("İşlem Başarısız: " + (data.detail || "Bilinmeyen bir hata oluştu."));
+            const data = await response.json();
+            window.showCustomAlert(data.detail || "Reservation failed.", "Error");
         }
     } catch (err) {
-        console.error("Rezervasyon hatası:", err);
-        alert("Sunucuya bağlanılamadı.");
+        window.showCustomAlert("Connection error.", "Error");
     }
 };
 

@@ -6,7 +6,7 @@ from database import get_db
 from routers.auth import get_current_user
 from typing import List, Optional
 
-# Eğer config.py oluşturduysanız buradan çekecektir. Yoksa üstte 100.0 olarak tanımlayın.
+
 try:
     from config import DEFAULT_PROVISION_AMOUNT
 except ImportError:

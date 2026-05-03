@@ -1,13 +1,22 @@
-from sqlalchemy import Column, Integer, String, Float, ForeignKey, Enum , Date , Time ,DateTime
+from sqlalchemy import Column, Integer, String, Float, ForeignKey, Enum, Date, Time, DateTime, Table
 from sqlalchemy.orm import relationship
 import enum
 from database import Base
 from datetime import datetime
 
-class ChargerStatus(str, enum.Enum): #charger icin status belirtecek class bu
+class ChargerStatus(str, enum.Enum):
     available = "available"
     occupied = "occupied"
     offline = "offline"
+
+# ---------- YENİ: FAVORİ İSTASYONLAR ARA TABLOSU ----------
+driver_favorite_stations = Table(
+    "driver_favorite_stations",
+    Base.metadata,
+    Column("driver_id", Integer, ForeignKey("drivers.driver_id"), primary_key=True),
+    Column("station_id", Integer, ForeignKey("stations.station_id"), primary_key=True)
+)
+# ----------------------------------------------------------
 
 #user table:
 class User(Base):
@@ -33,8 +42,14 @@ class Driver(Base):
     user = relationship("User", back_populates="driver_profile")
     vehicles = relationship("Vehicle", back_populates="owner")
     reservations = relationship("Reservation", back_populates="driver")
-    payments=relationship("Payment", back_populates="driver")
+    payments = relationship("Payment", back_populates="driver")
 
+    # ---------- YENİ: FAVORİ İSTASYONLAR İLİŞKİSİ ----------
+    favorite_stations = relationship(
+        "Station",
+        secondary=driver_favorite_stations,
+        back_populates="favorited_by"
+    )
 
 class Operator(Base):
     __tablename__ = "operators"
@@ -42,8 +57,7 @@ class Operator(Base):
 
     # ilişkiler
     user = relationship("User", back_populates="operator_profile")
-    managed_stations = relationship("Station", back_populates="manager") # burda sorumlu olduğu istasyonlar
-
+    managed_stations = relationship("Station", back_populates="manager")
 
 class Admin(Base):
     __tablename__ = "admins"
@@ -65,12 +79,19 @@ class Station(Base):
     manager = relationship("Operator", back_populates="managed_stations")
     chargers = relationship("Charger", back_populates="station")
 
+    # ---------- YENİ: İSTASYONU FAVORİLEYEN SÜRÜCÜLER ----------
+    favorited_by = relationship(
+        "Driver",
+        secondary=driver_favorite_stations,
+        back_populates="favorite_stations"
+    )
+
 #charger table
 class Charger(Base):
     __tablename__ = "chargers"
     charger_id = Column(Integer, primary_key=True, index=True)
 
-    station_id = Column(Integer, ForeignKey("stations.station_id")) #fk
+    station_id = Column(Integer, ForeignKey("stations.station_id"))
 
     type = Column(String)  # AC veya DC
     power_kW = Column(Integer)
@@ -79,27 +100,25 @@ class Charger(Base):
     status = Column(Enum(ChargerStatus), default=ChargerStatus.available)
 
     station = relationship("Station", back_populates="chargers")
-    reports= relationship("IssueReport", back_populates="charger")
+    reports = relationship("IssueReport", back_populates="charger")
 
 #vehicle table
 class Vehicle(Base):
     __tablename__ = "vehicles"
     vehicle_id = Column(Integer, primary_key=True, index=True)
-    owner_id = Column(Integer, ForeignKey("drivers.driver_id")) #fk
+    owner_id = Column(Integer, ForeignKey("drivers.driver_id"))
     brand = Column(String)
     model = Column(String)
     battery_kWh = Column(Float)
-    connector_type = Column(String)  # Tip 2, CCS vs
-    plate_number = Column(String, unique=True)  # plaka
+    connector_type = Column(String)
+    plate_number = Column(String, unique=True)
 
     owner = relationship("Driver", back_populates="vehicles")
-
 
 #reservation table
 class Reservation(Base):
     __tablename__ = "reservations"
     reservation_id = Column(Integer, primary_key=True, index=True)
-    #resi kim yapti, hangi charger icin yapti
     driver_id = Column(Integer, ForeignKey("drivers.driver_id"))
     charger_id = Column(Integer, ForeignKey("chargers.charger_id"))
 
@@ -107,16 +126,15 @@ class Reservation(Base):
     start_time = Column(Time)
     end_time = Column(Time)
 
-    status = Column(String, default="active") # "active", "completed", "cancelled"
+    status = Column(String, default="active")
 
     driver = relationship("Driver", back_populates="reservations")
-    charger = relationship("Charger")  # Hangi cihaz rezerve edildi
+    charger = relationship("Charger")
     payment = relationship("Payment", back_populates="reservation", uselist=False)
     charging_session = relationship("ChargingSession", back_populates="reservation", uselist=False)
 
-
 #payment table
-class PaymentType(str, enum.Enum): #odeme tipleri icin
+class PaymentType(str, enum.Enum):
     topup = "TopUp"
     charge = "Charge"
     refund = "Refund"
@@ -128,12 +146,10 @@ class Payment(Base):
     reservation_id = Column(Integer, ForeignKey("reservations.reservation_id"))
     amount = Column(Float)
     type = Column(Enum(PaymentType))
-    timestamp = Column(DateTime, default=datetime.utcnow) #otomatik olarak suanin tarihini atar
+    timestamp = Column(DateTime, default=datetime.utcnow)
 
     driver = relationship("Driver", back_populates="payments")
     reservation = relationship("Reservation", back_populates="payment")
-
-
 
 #issuereport table
 class ReportStatus(str, enum.Enum):
@@ -144,7 +160,7 @@ class IssueReport(Base):
     __tablename__ = "issue_reports"
     issue_id = Column(Integer, primary_key=True, index=True)
 
-    charger_id = Column(Integer, ForeignKey("chargers.charger_id")) #ariza hangi cihaza ait
+    charger_id = Column(Integer, ForeignKey("chargers.charger_id"))
     description = Column(String)
     reported_at = Column(DateTime, default=datetime.utcnow)
     status = Column(Enum(ReportStatus), default=ReportStatus.open)
@@ -157,8 +173,8 @@ class ChargingSession(Base):
     charging_session_id = Column(Integer, primary_key=True, index=True)
     reservation_id = Column(Integer, ForeignKey("reservations.reservation_id"), unique=True)
 
-    start_soc = Column(Float)  # soc = State of Charge (Başlangıç Batarya Yüzdesi)
-    end_soc = Column(Float)  # Bitiş Batarya Yüzdesi
+    start_soc = Column(Float)
+    end_soc = Column(Float)
     kwh_consumed = Column(Float)
     total_cost = Column(Float)
     duration_min = Column(Integer)
