@@ -25,6 +25,14 @@ async function initMap() {
 }
 
 async function initDashboard() {
+    // Token hiç yoksa direkt login'e at
+    const token = localStorage.getItem('token');
+    if (!token) {
+        window.location.href = "/login";
+        return; // Kodun devamını çalıştırma
+    }
+
+    // Token varsa normal işleyişe devam et
     loadStations();
     getUserLocation();
 }
@@ -44,8 +52,9 @@ async function loadStations() {
         });
 
         if (response.status === 401) {
-            console.error("Yetkisiz erişim! Lütfen giriş yaptığınızdan emin olun.");
-            alert("Oturum süreniz dolmuş veya giriş yapmamışsınız. Lütfen tekrar giriş yapın.");
+            console.warn("Oturum süresi dolmuş, çıkış yapılıyor...");
+            localStorage.removeItem('token'); // O bozuk anahtarı çöpe at
+            window.location.href = "/login";  // Login'e geri gönder
             return;
         }
 

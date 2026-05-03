@@ -56,20 +56,38 @@ async function loadProfile() {
             }
 
             // 4. Araç Listesi
-            const vehicleListEl = document.getElementById("vehicleList");
-            if (vehicleListEl) {
-                if (data.vehicles && data.vehicles.length > 0) {
-                    vehicleListEl.innerHTML = data.vehicles.map(v => `
-                        <div class="vehicle-item">
-                            <span class="vehicle-icon">🚗</span>
-                            <div class="vehicle-info">
-                                <strong>${v.brand} ${v.model}</strong>
-                                <span>${v.plate_number} • ${v.connector_type}</span>
-                            </div>
-                        </div>
-                    `).join('');
-                } else {
-                    vehicleListEl.innerHTML = '<p class="no-data" style="text-align:center; color:#666;">No vehicles registered.</p>';
+            if (user.role === "driver") {
+                const vehiclesResponse = await fetch("/vehicles/me", {
+                    method: "GET",
+                    headers: {
+                        "Authorization": `Bearer ${token}`,
+                        "Content-Type": "application/json"
+                    }
+                });
+
+                if (vehiclesResponse.ok) {
+                    const vehicles = await vehiclesResponse.json();
+                    const vehicleListEl = document.getElementById("vehicleList");
+
+                    if (vehicleListEl) {
+                        if (vehicles && vehicles.length > 0) {
+                            vehicleListEl.innerHTML = vehicles.map((v, index) => `
+                                <div class="vehicle-item" style="margin-bottom: 15px; padding: 12px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
+                                    <div class="vehicle-info">
+                                        <!-- index 0'dan başladığı için index + 1 diyoruz -->
+                                        <strong style="font-size: 1.1em; color: #333;"> ${v.brand} - ${v.model}</strong>
+                                        <div style="margin-top: 5px; color: #666; font-size: 0.9em;">
+                                            <span> Plaka: <b>${v.plate_number}</b></span> <br>
+                                            <span> Soket: <b>${v.connector_type}</b></span> | 
+                                            <span> Batarya: <b>${v.battery_kWh} kWh</b></span>
+                                        </div>
+                                    </div>
+                               </div>
+                            `).join('');
+                        } else {
+                            vehicleListEl.innerHTML = '<p class="no-data" style="text-align:center; color:#666;">No vehicles registered.</p>';
+                        }
+                    }
                 }
             }
 
@@ -122,7 +140,8 @@ document.getElementById("vehicleForm")?.addEventListener("submit", async (e) => 
         model: document.getElementById("vModel").value,
         plate_number: document.getElementById("vPlate").value,
         battery_kWh: parseFloat(document.getElementById("vBattery").value),
-        connector_type: document.getElementById("vConnector").value
+        connector_type: document.getElementById("vConnector").value,
+        owner_id: 0
     };
 
     try {

@@ -9,7 +9,7 @@ def seed_stations():
     if db.query(Station).count() > 0:
         print("Veri tabanında zaten istasyonlar var. İşlem iptal edildi.")
         return
-
+    '''
     stations_data = [
         {
             "name": "Ege Üniversitesi Kampüs Şarj Noktası",
@@ -103,6 +103,7 @@ def seed_stations():
             ]
         }
     ]
+    '''
 
     for s_data in stations_data:
         # İstasyonu ekle
