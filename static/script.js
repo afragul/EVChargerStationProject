@@ -13,7 +13,6 @@ function toggleVehicleView(showAdd) {
     }
 }
 
-// --- PROFİL YÜKLEME FONKSİYONU ---
 async function loadProfile() {
     const token = localStorage.getItem("token");
 
@@ -35,7 +34,8 @@ async function loadProfile() {
             const data = await response.json();
             const user = data.user || data;
 
-            // 1. Temel Bilgiler ve Avatar
+            window.currentUserId = user.user_id || user.id;
+
             document.getElementById("userName").innerText = user.name;
             document.getElementById("userEmail").innerText = user.email;
 
@@ -51,8 +51,19 @@ async function loadProfile() {
 
             // 3. Cüzdan Bilgisi
             const walletBalanceEl = document.getElementById("walletBalance");
-            if (walletBalanceEl && data.wallet_balance !== undefined) {
-                walletBalanceEl.innerText = data.wallet_balance.toFixed(2);
+            if (walletBalanceEl && user.role === "driver") {
+                try {
+                    const balRes = await fetch("/payments/wallet-balance", {
+                        method: "GET",
+                        headers: { "Authorization": `Bearer ${token}` }
+                    });
+                    if (balRes.ok) {
+                        const balData = await balRes.json();
+                        walletBalanceEl.innerText = balData.balance.toFixed(2);
+                    }
+                } catch (e) {
+                    console.error("Bakiye çekilemedi:", e);
+                }
             }
 
             // 4. Araç Listesi
@@ -191,3 +202,52 @@ function handleLogout() {
 
 // Sayfa yüklendiğinde profili getir
 document.addEventListener("DOMContentLoaded", loadProfile);
+
+// --- BAKİYE YÜKLEME (TOP-UP) FONKSİYONU ---
+window.topUpWallet = async function() {
+    //  Kullanıcıdan tutar iste
+    const amountStr = prompt("Yüklemek istediğiniz tutarı girin (₺):", "500");
+    if (!amountStr) return; // İptal'e basarsa çık
+
+    const amount = parseFloat(amountStr);
+    if (isNaN(amount) || amount <= 0) {
+        alert("Lütfen geçerli bir sayı girin.");
+        return;
+    }
+
+    if (!window.currentUserId) {
+        alert("User not found. Please try again.");
+        return;
+    }
+
+    const token = localStorage.getItem("token");
+
+    const payload = {
+        amount: amount,
+        type: "TopUp",
+        driver_id: window.currentUserId
+    };
+
+    try {
+        const response = await fetch("/payments/topup", {
+            method: "POST",
+            headers: {
+                "Authorization": `Bearer ${token}`,
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify(payload)
+        });
+
+        if (response.ok) {
+            alert(` ${amount} ₺ başarıyla cüzdanınıza yüklendi!`);
+            // Yeni bakiyeyi ekranda görmek için profili baştan yükle
+            loadProfile();
+        } else {
+            const errorData = await response.json();
+            alert("Yükleme başarısız: " + (errorData.detail || "Bilinmeyen hata"));
+        }
+    } catch (error) {
+        console.error("Yükleme hatası:", error);
+        alert("Sunucuya bağlanılamadı.");
+    }
+};

@@ -13,7 +13,7 @@
         <!-- BÖLÜM 1: PROFİL GÖRÜNÜMÜ -->
         <div id="profileView">
             <div class="view-header">
-                <button class="btn-back" onclick="window.history.back()">
+                <button class="btn-back" onclick="window.location.href='/'">
                     <span class="back-icon">←</span> Back
                 </button>
             </div>
@@ -31,8 +31,9 @@
                 </div>
                 <div class="info-block">
                     <label>Wallet Balance</label>
-                    <div class="wallet-box">
-                        <span id="walletBalance">0.00</span> ₺
+                    <div class="wallet-box" style="display: flex; align-items: center; gap: 10px;">
+                        <div><span id="walletBalance">0.00</span> ₺</div>
+                        <button onclick="topUpWallet()" style="background: #28a745; color: white; border: none; border-radius: 4px; padding: 4px 10px; cursor: pointer; font-size: 12px; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">+ Yükle</button>
                     </div>
                 </div>
             </div>
@@ -107,6 +108,59 @@
     </div>
 </div>
 
-<script src="/static/script.js"></script>
+<script src="/static/script.js?v=3"></script>
+
+<!-- İŞTE EKSİK OLAN VE BUTONU ÇALIŞTIRACAK KOD BURASI -->
+<script>
+window.topUpWallet = async function() {
+    // 1. Kullanıcıdan tutar iste
+    const amountStr = prompt("Yüklemek istediğiniz tutarı girin (₺):", "500");
+    if (!amountStr) return; // İptal'e basarsa çık
+
+    const amount = parseFloat(amountStr);
+    if (isNaN(amount) || amount <= 0) {
+        alert("Lütfen geçerli bir sayı girin.");
+        return;
+    }
+
+    // 2. Kullanıcı ID'sini kontrol et
+    if (!window.currentUserId) {
+        alert("Kullanıcı kimliği bulunamadı. Lütfen sayfayı yenileyip tekrar deneyin.");
+        return;
+    }
+
+    const token = localStorage.getItem("token");
+
+    // 3. Backend'e gönderilecek veriyi hazırla
+    const payload = {
+        amount: amount,
+        type: "TopUp",
+        driver_id: window.currentUserId
+    };
+
+    try {
+        const response = await fetch("/payments/topup", {
+            method: "POST",
+            headers: {
+                "Authorization": `Bearer ${token}`,
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify(payload)
+        });
+
+        if (response.ok) {
+            alert(`🎉 ${amount} ₺ başarıyla cüzdanınıza yüklendi!`);
+            window.location.reload(); // Bakiyeyi görmek için sayfayı yenile
+        } else {
+            const errorData = await response.json();
+            alert("Yükleme başarısız: " + (errorData.detail || "Bilinmeyen hata"));
+        }
+    } catch (error) {
+        console.error("Yükleme hatası:", error);
+        alert("Sunucuya bağlanılamadı.");
+    }
+};
+</script>
+
 </body>
 </html>

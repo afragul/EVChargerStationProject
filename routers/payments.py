@@ -6,6 +6,7 @@ import schemas
 import crud
 import models
 from database import get_db
+from routers.auth import get_current_user
 
 router = APIRouter(prefix="/payments", tags=["Payments"])
 
@@ -55,3 +56,19 @@ def get_driver_payments(driver_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Driver not found")
 
     return crud.get_payments_by_driver(db, driver_id)
+
+
+@router.get("/wallet-balance")
+def get_wallet_balance(
+        db: Session = Depends(get_db),
+        current_user: models.User = Depends(get_current_user)
+):
+    """Giriş yapan sürücünün güncel cüzdan bakiyesini getirir"""
+    if current_user.role != "driver":
+        return {"balance": 0.0}
+
+    driver = db.query(models.Driver).filter(models.Driver.driver_id == current_user.user_id).first()
+    if not driver:
+        return {"balance": 0.0}
+
+    return {"balance": driver.wallet_balance}

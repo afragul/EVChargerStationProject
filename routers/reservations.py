@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from datetime import datetime
+from datetime import datetime , date
 import models, schemas
 from database import get_db
 from routers.auth import get_current_user
@@ -59,6 +59,17 @@ def create_reservation(
         raise HTTPException(
             status_code=400, 
             detail="Seçilen tarih ve saat dilimi, bu cihazdaki başka bir rezervasyon ile çakışıyor."
+        )
+    existing_user_reservation = db.query(models.Reservation).filter(
+        models.Reservation.driver_id == driver.driver_id,
+        models.Reservation.date == req.date,
+        models.Reservation.status == "active"
+    ).first()
+
+    if existing_user_reservation:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Bu tarih için zaten {existing_user_reservation.start_time.strftime('%H:%M')} saatinde başlayan aktif bir rezervasyonunuz var. Yenisini yapmadan önce onu tamamlamalı veya iptal etmelisiniz."
         )
     
     # DÜZELTME: Bakiye kontrolü ve provizyonun kesilmesi
@@ -207,3 +218,21 @@ def complete_charging(
 
     db.commit()
     return {"message": "Şarj işlemi tamamlandı. Cihaz ayrıldı."}
+
+# 8. YENİ: BELİRLİ BİR CİHAZIN GÜNLÜK DOLU SAATLERİNİ GETİRME (GET)
+@router.get("/charger/{charger_id}/schedule")
+def get_charger_schedule(
+    charger_id: int,
+    target_date: date,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    # Sadece aktif olan ve o günkü rezervasyonları çek
+    reservations = db.query(models.Reservation).filter(
+        models.Reservation.charger_id == charger_id,
+        models.Reservation.date == target_date,
+        models.Reservation.status.in_(["active", "charging"]) # İptal olanları dahil etme
+    ).all()
+
+    # Frontend'in sadece saatleri bilmesi yeterli, kimin rezerve ettiğini gizliyoruz (Güvenlik)
+    return [{"start_time": res.start_time.strftime("%H:%M"), "end_time": res.end_time.strftime("%H:%M")} for res in reservations]
