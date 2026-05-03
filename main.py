@@ -1,13 +1,11 @@
 from fastapi import FastAPI, Request # Request buraya eklendi
 from fastapi.middleware.cors import CORSMiddleware
 
-#static ve template dosyaları için
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+import os
+from dotenv import load_dotenv
 
-
-
-# Modüllerimizi import ediyoruz
 import models
 from database import engine
 from routers import (
@@ -24,6 +22,7 @@ from routers import (
     vehicles
 )
 
+load_dotenv()
 models.Base.metadata.create_all(bind=engine) # Veritabanı tablolarını oluşturur
 
 app=FastAPI(
@@ -69,10 +68,11 @@ def root():
 #Harita burada yüklenecek
 @app.get("/")
 async def read_root(request: Request):
+    api_key=os.getenv("GOOGLE_API_KEY")
     return templates.TemplateResponse(
         request=request,
         name="index.html",
-        context={}
+        context={"google_maps_api_key" : api_key}
     )
 
 # login için

@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <title>Dashboard | EV Charging Map</title>
     <link rel="stylesheet" href="/static/style.css">
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
 <body style="display: block; overflow-y: auto;">
@@ -30,10 +30,14 @@
 </header>
 
     <!-- Harita Alanı -->
-    <div id="map" style="height: calc(100vh - 80px); width: 100%;"></div>
+    <div id="map" style="height: 500px; width: 100%; position: relative;"></div>
 
-    <!-- Scriptler -->
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!--  Dashboard mantığı ve logout fonksiyonları -->
     <script src="/static/dashboard.js"></script>
+
+    <!--  Google Maps API Script (Backend'den gelen anahtar ile) -->
+    <script src="https://maps.googleapis.com/maps/api/js?key={{ google_maps_api_key }}&callback=initMap" async defer></script>
+
+
 </body>
 </html>
