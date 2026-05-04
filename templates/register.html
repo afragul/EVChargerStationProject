@@ -10,6 +10,33 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
     <!-- Modern İkon Kütüphanesi -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+
+    <style>
+        /* Operatör seçimi için özel şık tasarım */
+        .role-toggle {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 12px 15px;
+            background: rgba(46, 204, 113, 0.05);
+            border: 1px solid rgba(46, 204, 113, 0.3);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: 0.3s;
+            margin-top: 15px;
+            color: #ddd;
+        }
+        .role-toggle:hover {
+            background: rgba(46, 204, 113, 0.15);
+            border-color: #2ecc71;
+        }
+        .role-toggle input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            accent-color: #2ecc71;
+            cursor: pointer;
+        }
+    </style>
 </head>
 <body>
 
@@ -35,19 +62,27 @@
                     <input type="email" id="email" name="email" required placeholder="name@company.com">
                 </div>
 
-                <!-- Backend'in beklediği 'role' alanını varsayılan olarak gönderiyoruz -->
+                <div class="input-group">
+                    <label for="reg_password">Password</label>
+                    <div style="position: relative;">
+                        <input type="password" id="reg_password" name="password" required placeholder="••••••••">
+                        <i class="fas fa-eye" id="toggleRegisterPassword" style="position: absolute; right: 15px; top: 50%; transform: translateY(-50%); cursor: pointer; color: #888;"></i>
+                    </div>
+                </div>
+
+                <!-- YENİ: ŞIK OPERATÖR SEÇİM ALANI -->
+                <label class="role-toggle" for="apply_operator">
+                    <input type="checkbox" id="apply_operator">
+                    <span style="flex: 1; font-size: 14px; font-weight: 600;">Apply as Station Operator</span>
+                    <i class="fas fa-charging-station" style="color: #2ecc71; font-size: 18px;"></i>
+                </label>
+
+                <!-- Backend'in beklediği 'role' alanını burada dinamik tutuyoruz -->
                 <input type="hidden" name="role" id="role" value="driver">
 
-                <div class="input-group">
-    <label for="reg_password">Password</label>
-    <div style="position: relative;">
-        <input type="password" id="reg_password" name="password" required placeholder="••••••••">
-        <i class="fas fa-eye" id="toggleRegisterPassword" style="position: absolute; right: 15px; top: 50%; transform: translateY(-50%); cursor: pointer;"></i>
-    </div>
-</div>
             </div>
 
-            <button type="submit" id="registerBtn">Create Account</button>
+            <button type="submit" id="registerBtn" style="margin-top: 20px;">Create Account</button>
 
             <!-- Mesaj alanı -->
             <div id="message"></div>
@@ -58,6 +93,14 @@
             </div>
         </form>
     </div>
+
+    <!-- YENİ: CHECKBOX İLE GİZLİ INPUT'U BAĞLAYAN SCRIPT -->
+    <script>
+        document.getElementById('apply_operator').addEventListener('change', function() {
+            // Checkbox işaretliyse 'operator', değilse 'driver' yaz
+            document.getElementById('role').value = this.checked ? 'operator' : 'driver';
+        });
+    </script>
 
     <!-- JS dosyası -->
     <script src="/static/auth.js"></script>

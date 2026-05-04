@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from typing import List
 import models, schemas
 from database import get_db
 from routers.auth import get_current_user
@@ -65,3 +66,28 @@ def set_charger_price(
     charger.price_per_kWh = price_per_kwh
     db.commit()
     return {"message": f"Cihazın yeni kWh fiyatı {price_per_kwh} TL olarak güncellendi."}
+
+
+# ==========================================
+# YENİ EKLENEN: Operatörleri Listeleme (Arayüz İçin)
+# ==========================================
+@router.get("/operators")
+def get_all_operators(
+        db: Session = Depends(get_db),
+        current_user: models.User = Depends(get_current_user)
+):
+    require_admin(current_user)
+
+    # Operator tablosu ile User tablosunu eşleştirip (join) isimleri ve email'leri alıyoruz
+    operators = db.query(models.Operator, models.User).join(
+        models.User, models.Operator.user_id == models.User.user_id
+    ).all()
+
+    result = []
+    for op, user in operators:
+        result.append({
+            "operator_id": op.operator_id,
+            "name": user.name,
+            "email": user.email
+        })
+    return result

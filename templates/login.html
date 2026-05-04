@@ -51,20 +51,22 @@
             <!-- Hata veya bilgi mesajları -->
             <div id="message"></div>
 
-<div class="register-section">
-    <div class="user-register">
-        <span>Don't have an account yet?</span>
-        <a href="/register">Create New Account</a>
-    </div>
+            <div class="register-section">
+                <div class="user-register">
+                    <span>Don't have an account yet?</span>
+                    <a href="/register">Create New Account</a>
+                </div>
 
-    <div class="operator-divider">or</div>
+                <div class="operator-divider" style="margin: 10px 0; color: #888; font-size: 12px; text-align: center;">or</div>
 
-    <div class="operator-apply">
-        <span>Want to manage a station?</span>
-        <a href="/operator-apply" class="apply-link">Apply as Operator</a>
-    </div>
-</div>
+                <div class="operator-apply">
+                    <span>Want to manage a station?</span>
+                    <!-- BURASI DÜZELTİLDİ: Artık 404 vermeyecek, doğrudan yeni kayıt ekranımıza gidecek -->
+                    <a href="/register" class="apply-link">Apply as Operator</a>
+                </div>
+            </div>
         </form>
+    </div>
 
     <!-- Backend bağlantısını sağlayan JavaScript -->
     <script src="/static/auth.js"></script>

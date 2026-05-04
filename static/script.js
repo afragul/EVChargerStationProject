@@ -2,18 +2,24 @@ window.alertCallback = null;
 window.confirmCallback = null;
 window.chargeInterval = null;
 
-// YENİ: BİLDİRİM SİSTEMİ FONKSİYONLARI
+// ==========================================
+// BİLDİRİM SİSTEMİ FONKSİYONLARI
+// ==========================================
+function getNotifKey() { return 'ev_notifs_' + (window.currentUserId || 'guest'); }
+
 function addNotification(message) {
-    let notifs = JSON.parse(localStorage.getItem('ev_notifs') || '[]');
+    let key = getNotifKey();
+    let notifs = JSON.parse(localStorage.getItem(key) || '[]');
     let time = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
     notifs.unshift({text: message, time: time});
-    if(notifs.length > 10) notifs.pop(); // Son 10 bildirimi tut
-    localStorage.setItem('ev_notifs', JSON.stringify(notifs));
+    if(notifs.length > 10) notifs.pop();
+    localStorage.setItem(key, JSON.stringify(notifs));
     renderNotifs();
 }
 
 function renderNotifs() {
-    let notifs = JSON.parse(localStorage.getItem('ev_notifs') || '[]');
+    let key = getNotifKey();
+    let notifs = JSON.parse(localStorage.getItem(key) || '[]');
     let list = document.getElementById('notifList');
     let badge = document.getElementById('notifBadge');
 
@@ -36,58 +42,263 @@ window.toggleNotifs = () => {
     p.style.display = p.style.display === 'none' ? 'block' : 'none';
 };
 
-// UI MODALLAR
-window.showCustomAlert = (m, t, cb) => {
-    document.getElementById("customAlertTitle").innerText = t;
-    document.getElementById("customAlertMessage").innerText = m;
-    document.getElementById("customAlertModal").style.display = "flex";
-    window.alertCallback = cb;
-};
-window.closeCustomAlert = () => {
-    document.getElementById("customAlertModal").style.display = "none";
-    if(window.alertCallback) window.alertCallback();
-};
-window.showCustomConfirm = (message, title, onConfirm) => {
-    document.getElementById("customConfirmTitle").innerText = title;
-    document.getElementById("customConfirmMessage").innerText = message;
-    document.getElementById("customConfirmModal").style.display = "flex";
-    window.confirmCallback = onConfirm;
-};
-window.closeCustomConfirm = (isConfirmed) => {
-    document.getElementById("customConfirmModal").style.display = "none";
-    if (isConfirmed && window.confirmCallback) window.confirmCallback();
-    window.confirmCallback = null;
-};
 
-// PROFİL YÜKLEME
+// ==========================================
+// PROFİL VE VERİ YÜKLEME (ROLE GÖRE AYRIM)
+// ==========================================
 window.loadProfile = async function() {
-    renderNotifs(); // Bildirimleri yükle
     const token = localStorage.getItem("token");
     if (!token) return;
 
-    const res = await fetch("/users/me", { headers: { "Authorization": `Bearer ${token}` } });
-    if (res.ok) {
-        const user = await res.json();
-        window.currentUserId = user.user_id;
-        document.getElementById("userName").innerText = user.name;
-        document.getElementById("userEmail").innerText = user.email;
-        document.getElementById("userNameLetter").innerText = user.name.charAt(0).toUpperCase();
+    try {
+        const res = await fetch("/users/me", { headers: { "Authorization": `Bearer ${token}` } });
+        if (res.ok) {
+            const user = await res.json();
+            window.currentUserId = user.user_id;
+            renderNotifs();
 
-        if (user.role === "driver") {
-            const bRes = await fetch("/payments/wallet-balance", { headers: { "Authorization": `Bearer ${token}` } });
-            if (bRes.ok) document.getElementById("walletBalance").innerText = (await bRes.json()).balance.toFixed(2);
+            document.getElementById("userName").innerText = user.name;
+            document.getElementById("userEmail").innerText = user.email;
+            document.getElementById("userNameLetter").innerText = user.name.charAt(0).toUpperCase();
 
-            const vRes = await fetch("/vehicles/me", { headers: { "Authorization": `Bearer ${token}` } });
-            if (vRes.ok) renderVehicles(await vRes.json());
+            let badgeColor = user.role === 'admin' ? '#9b59b6' : (user.role === 'operator' ? '#f39c12' : '#3498db');
+            const badge = document.getElementById("userRoleBadge");
+            badge.innerText = user.role.toUpperCase();
+            badge.style.background = badgeColor;
 
-            const fRes = await fetch("/stations/favorites/me", { headers: { "Authorization": `Bearer ${token}` } });
-            if (fRes.ok) renderFavorites(await fRes.json());
+            // Tüm view'leri gizle
+            document.getElementById("driverView").style.display = "none";
+            document.getElementById("operatorView").style.display = "none";
+            document.getElementById("walletBlock").style.display = "none";
+            if(document.getElementById("adminView")) document.getElementById("adminView").style.display = "none";
 
-            loadReservations(token);
+            // Yetkisine göre uygun view'i aç
+            if (user.role === "driver") {
+                document.getElementById("driverView").style.display = "block";
+                document.getElementById("walletBlock").style.display = "block";
+
+                const bRes = await fetch("/payments/wallet-balance", { headers: { "Authorization": `Bearer ${token}` } });
+                if (bRes.ok) document.getElementById("walletBalance").innerText = (await bRes.json()).balance.toFixed(2);
+
+                const vRes = await fetch("/vehicles/me", { headers: { "Authorization": `Bearer ${token}` } });
+                if (vRes.ok) renderVehicles(await vRes.json());
+
+                const fRes = await fetch("/stations/favorites/me", { headers: { "Authorization": `Bearer ${token}` } });
+                if (fRes.ok) renderFavorites(await fRes.json());
+
+                loadReservations(token);
+            }
+            else if (user.role === "operator") {
+                document.getElementById("operatorView").style.display = "block";
+                loadOperatorData(token);
+            }
+            else if (user.role === "admin") {
+                if(document.getElementById("adminView")) document.getElementById("adminView").style.display = "block";
+                loadAdminData(token);
+            }
         }
+    } catch (error) {
+        console.error("Profile load error:", error);
     }
 };
 
+
+// ==========================================
+// 👑 ADMIN (SİSTEM YÖNETİCİSİ) FONKSİYONLARI 👑
+// ==========================================
+async function loadAdminData(token) {
+    try {
+        const [opRes, stRes] = await Promise.all([
+            fetch("/admin/operators", { headers: { "Authorization": `Bearer ${token}` } }),
+            fetch("/stations/", { headers: { "Authorization": `Bearer ${token}` } })
+        ]);
+
+        if (opRes.ok && stRes.ok) {
+            const operators = await opRes.json();
+            const stations = await stRes.json();
+            renderAdminStations(stations, operators);
+        }
+    } catch (e) { console.error("Admin data error:", e); }
+}
+
+function renderAdminStations(stations, operators) {
+    const el = document.getElementById("adminStationsList");
+    if (!el) return;
+    if (stations.length === 0) {
+        el.innerHTML = '<p style="color:#666; text-align:center; width:100%;">No stations found in the system.</p>';
+        return;
+    }
+
+    let html = '';
+    stations.forEach(s => {
+        let opOptions = `<option value="">-- Unassigned --</option>` +
+            operators.map(o => `<option value="${o.operator_id}" ${s.operator_id === o.operator_id ? 'selected' : ''}>${o.name}</option>`).join('');
+
+        html += `
+        <div style="background:#1a2922; padding:20px; border-radius:10px; margin-bottom:15px; border:1px solid #9b59b6; width:100%;">
+            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:10px; margin-bottom:10px;">
+                <h4 style="color:#9b59b6; margin:0;">📍 ${s.name}</h4>
+                <div style="display:flex; gap:10px;">
+                    <select id="assign_op_${s.station_id}" style="padding:6px; background:#2c3e50; color:white; border:none; border-radius:4px; outline:none;">
+                        ${opOptions}
+                    </select>
+                    <button onclick="assignOperatorToStation('${s.station_id}')" style="background:#9b59b6; border:none; color:white; padding:6px 12px; border-radius:4px; cursor:pointer; font-weight:bold;">Assign</button>
+                </div>
+            </div>
+            <div style="display:flex; flex-wrap:wrap; gap:10px;">`;
+
+        s.chargers.forEach(c => {
+            html += `
+                <div style="background:#0f1714; padding:10px; border-radius:8px; border-left:4px solid #3498db; width:48%; min-width:150px;">
+                    <strong style="color:white; font-size:13px;">🔌 Charger #${c.charger_id}</strong>
+                    <div style="display:flex; align-items:center; gap:5px; margin-top:8px;">
+                        <span style="font-size:11px; color:#aaa;">₺/kWh:</span>
+                        <input type="number" id="price_${c.charger_id}" value="${c.price_per_kWh}" step="0.5" style="width:60px; padding:4px; background:#2c3e50; color:white; border:none; border-radius:4px; font-size:12px;">
+                        <button onclick="updateChargerPrice('${c.charger_id}')" style="background:#3498db; border:none; color:white; padding:4px 8px; border-radius:4px; cursor:pointer; font-size:11px;">Update</button>
+                    </div>
+                </div>
+            `;
+        });
+        html += `</div></div>`;
+    });
+    el.innerHTML = html;
+}
+
+window.assignOperatorToStation = async function(stationId) {
+    const opId = document.getElementById(`assign_op_${stationId}`).value;
+    if (!opId) {
+        window.showCustomAlert("Please select an operator from the list.", "Error");
+        return;
+    }
+
+    const token = localStorage.getItem("token");
+    const res = await fetch(`/admin/stations/${stationId}/assign-operator?operator_id=${opId}`, {
+        method: "PUT", headers: { "Authorization": `Bearer ${token}` }
+    });
+
+    if (res.ok) {
+        addNotification(`Operator successfully assigned to station.`);
+        window.showCustomAlert("Station assignment updated successfully.", "Success", () => window.location.reload());
+    } else {
+        window.showCustomAlert("Error assigning operator.", "Error");
+    }
+};
+
+window.updateChargerPrice = async function(chargerId) {
+    const price = document.getElementById(`price_${chargerId}`).value;
+    const token = localStorage.getItem("token");
+
+    const res = await fetch(`/admin/chargers/${chargerId}/price?price_per_kwh=${price}`, {
+        method: "PUT", headers: { "Authorization": `Bearer ${token}` }
+    });
+
+    if (res.ok) {
+        addNotification(`Charger #${chargerId} price updated to ${price} ₺.`);
+        window.showCustomAlert("Price updated successfully.", "Success");
+    } else {
+        window.showCustomAlert("Error updating price.", "Error");
+    }
+};
+
+
+// ==========================================
+// 🏢 OPERATÖR (YÖNETİCİ) FONKSİYONLARI 🏢
+// ==========================================
+async function loadOperatorData(token) {
+    try {
+        const issRes = await fetch("/operators/issues", { headers: { "Authorization": `Bearer ${token}` } });
+        if (issRes.ok) renderOperatorIssues(await issRes.json());
+    } catch (e) { console.error(e); }
+
+    try {
+        const stRes = await fetch("/operators/my-stations", { headers: { "Authorization": `Bearer ${token}` } });
+        if (stRes.ok) renderOperatorStations(await stRes.json());
+    } catch (e) { console.error(e); }
+}
+
+function renderOperatorIssues(issues) {
+    const el = document.getElementById("operatorIssuesList");
+    const openIssues = issues.filter(i => i.status === 'open');
+    if (openIssues.length === 0) {
+        el.innerHTML = '<p style="color:#666; width:100%; text-align:center;">No active issue reports.</p>'; return;
+    }
+    el.innerHTML = openIssues.map(i => `
+        <div class="vehicle-item" style="border-left: 4px solid #e74c3c; width:100%;">
+            <div class="vehicle-info" style="width:100%;">
+                <div style="display:flex; justify-content:space-between;">
+                    <strong style="color:#e74c3c; font-size:14px;">🚨 Charger ID: #${i.charger_id}</strong>
+                    <span style="font-size:10px; color:#aaa;">${new Date(i.reported_at).toLocaleString()}</span>
+                </div>
+                <p style="font-size:0.85rem; color:#ddd; margin:6px 0;">${i.description}</p>
+                <button onclick="resolveIssue('${i.issue_id}')" style="background:#2ecc71; border:none; color:white; padding:6px 12px; border-radius:4px; cursor:pointer;">✅ Mark as Resolved</button>
+            </div>
+        </div>
+    `).join('');
+}
+
+function renderOperatorStations(stations) {
+    const el = document.getElementById("operatorStationsList");
+    if (stations.length === 0) {
+        el.innerHTML = '<p style="color:#666; width:100%; text-align:center;">You have no stations assigned yet.</p>'; return;
+    }
+    let html = '';
+    stations.forEach(s => {
+        html += `<div style="background:#1a2922; padding:20px; border-radius:10px; margin-bottom:15px; border:1px solid #2ecc71; width:100%;">
+            <h4 style="color:#2ecc71; margin-top:0; margin-bottom:5px;">📍 ${s.name}</h4><div style="display:flex; flex-wrap:wrap; gap:10px;">`;
+        s.chargers.forEach(c => {
+            let color = c.status === 'available' ? '#2ecc71' : c.status === 'occupied' ? '#f39c12' : '#e74c3c';
+            // BORDER-LEFT KISMI DÜZELTİLDİ (Boşluk eklendi)
+            html += `
+                <div style="background:#0f1714; padding:10px; border-radius:8px; border-left:4px solid ${color}; width:48%; min-width:150px;">
+                    <strong style="color:white; font-size:13px;">🔌 Charger #${c.charger_id}</strong>
+                    <select onchange="updateChargerStatus('${c.charger_id}', this.value)" style="width:100%; padding:6px; margin-top:8px; background:#2c3e50; color:white; border:none; border-radius:4px;">
+                        <option value="available" ${c.status==='available'?'selected':''}>🟢 Available</option>
+                        <option value="occupied" ${c.status==='occupied'?'selected':''}>🟡 Occupied</option>
+                        <option value="offline" ${c.status==='offline'?'selected':''}>🔴 Offline (Out of Service)</option>
+                    </select>
+                </div>`;
+        });
+        html += `</div></div>`;
+    });
+    el.innerHTML = html;
+}
+
+window.updateChargerStatus = async function(chargerId, newStatus) {
+    const token = localStorage.getItem("token");
+    window.showCustomConfirm(`Change Charger #${chargerId} to ${newStatus.toUpperCase()}?`, "Status Update", async () => {
+        try {
+            const res = await fetch(`/operators/chargers/${chargerId}/status`, {
+                method: "PUT", headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
+                body: JSON.stringify({ status: newStatus })
+            });
+            if (res.ok) {
+                addNotification(`Charger status updated to ${newStatus}.`);
+                window.location.reload();
+            } else {
+                window.showCustomAlert("Error updating status.", "Error");
+            }
+        } catch (e) { console.error(e); }
+    });
+};
+
+window.resolveIssue = async function(issueId) {
+    const token = localStorage.getItem("token");
+    window.showCustomConfirm("Mark issue as resolved?", "Resolve Issue", async () => {
+        try {
+            const res = await fetch(`/operators/issues/${issueId}/resolve`, {
+                method: "PATCH", headers: { "Authorization": `Bearer ${token}` }
+            });
+            if (res.ok) {
+                window.location.reload();
+            }
+        } catch (e) { console.error(e); }
+    });
+};
+
+
+// ==========================================
+// 🚘 SÜRÜCÜ (DRIVER) FONKSİYONLARI 🚘
+// ==========================================
 async function loadReservations(token) {
     const elActive = document.getElementById("reservationsList");
     const elHistory = document.getElementById("historyList");
@@ -96,82 +307,29 @@ async function loadReservations(token) {
 
     try {
         const stRes = await fetch("/stations/", { headers: { "Authorization": `Bearer ${token}` } });
-        let stations = [];
-        if (stRes.ok) stations = await stRes.json();
+        let stations = stRes.ok ? await stRes.json() : [];
 
         const res = await fetch("/reservations/me", { headers: { "Authorization": `Bearer ${token}` } });
         if (res.ok) {
             const reservations = await res.json();
-
             const activeRes = reservations.filter(r => r.status === 'active');
-            const historyRes = reservations.filter(r => r.status === 'completed');
-
-            // Canlı şarj olan var mı kontrol et
+            const historyRes = reservations.filter(r => r.status === 'completed' || r.status === 'cancelled');
             const chargingRes = reservations.find(r => r.status === 'charging');
+
             if(chargingRes) {
                 isCurrentlyCharging = true;
                 chargingResId = chargingRes.reservation_id;
             }
 
-            // AKTİF REZERVASYONLAR (Sadece 'active' olanlar - bekleyenler)
-            if (activeRes.length === 0) {
-                elActive.innerHTML = '<p style="color:#666; width:100%; text-align:center;">No pending reservations.</p>';
-            } else {
-                activeRes.sort((a, b) => new Date(b.date) - new Date(a.date));
-                elActive.innerHTML = activeRes.map(r => {
-                    let stationName = "Unknown Station";
-                    let chargerType = "";
-                    stations.forEach(s => {
-                        const charger = s.chargers.find(c => c.charger_id === r.charger_id);
-                        if(charger) { stationName = s.name; chargerType = charger.connector_type; }
-                    });
+            if (activeRes.length === 0) elActive.innerHTML = '<p style="color:#666; text-align:center;">No pending reservations.</p>';
+            else elActive.innerHTML = activeRes.map(r => renderActiveRes(r, stations)).join('');
 
-                    return `
-                    <div class="vehicle-item" style="border-left: 4px solid #f39c12; background: rgba(255,255,255,0.03);">
-                        <div class="vehicle-info" style="width: 100%;">
-                            <div style="display: flex; justify-content: space-between;">
-                                <strong style="color:white; font-size:14px;">📅 ${r.date}</strong>
-                                <span style="font-size:10px; font-weight:bold; color:#f39c12; padding:2px 6px; border: 1px solid #f39c12; border-radius:4px;">WAITING</span>
-                            </div>
-                            <p style="font-size:0.85rem; color:#bbb; margin:6px 0;"><b>📍 ${stationName}</b><br>🔌 ${chargerType} <br>⏰ ${r.start_time} - ${r.end_time}</p>
-                            <div style="margin-top: 8px;">
-                                <button onclick="startCharging(${r.reservation_id})" style="background: #2ecc71; border: none; color: white; padding: 6px 10px; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight:bold; margin-right: 5px;">⚡ Start Charge</button>
-                                <button onclick="confirmCancelReservation(${r.reservation_id})" style="background: none; border: 1px solid #e74c3c; color: #e74c3c; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight:bold;">Cancel</button>
-                            </div>
-                        </div>
-                    </div>`;
-                }).join('');
-            }
+            if (historyRes.length === 0) elHistory.innerHTML = '<p style="color:#666; text-align:center;">No history.</p>';
+            else elHistory.innerHTML = historyRes.map(r => renderHistoryRes(r, stations)).join('');
 
-            // GEÇMİŞ (HISTORY)
-            if (historyRes.length === 0) {
-                elHistory.innerHTML = '<p style="color:#666; width:100%; text-align:center;">No charging history.</p>';
-            } else {
-                historyRes.sort((a, b) => new Date(b.date) - new Date(a.date));
-                elHistory.innerHTML = historyRes.map(r => {
-                    let stationName = "Unknown Station";
-                    stations.forEach(s => {
-                        const charger = s.chargers.find(c => c.charger_id === r.charger_id);
-                        if(charger) stationName = s.name;
-                    });
-                    return `
-                    <div class="vehicle-item" style="border-left: 4px solid #2ecc71; opacity: 0.8;">
-                        <div class="vehicle-info" style="width: 100%;">
-                            <div style="display: flex; justify-content: space-between;">
-                                <strong style="color:white; font-size:13px;">📅 ${r.date}</strong>
-                                <span style="font-size:9px; color:#2ecc71;">COMPLETED</span>
-                            </div>
-                            <p style="font-size:0.8rem; color:#888; margin:4px 0;">📍 ${stationName}</p>
-                            ${r.charging_session ? `<p style="font-size:10px; color:#f1c40f; margin:0;">${r.charging_session.duration_min} min | ${r.charging_session.kwh_consumed} kWh | ${r.charging_session.total_cost} ₺</p>` : ''}
-                        </div>
-                    </div>`;
-                }).join('');
-            }
-
-            // YENİ: CANLI ŞARJ EKRANINI YÖNET
             if (isCurrentlyCharging) {
                 document.getElementById('liveChargingPanel').style.display = 'block';
-                document.getElementById('reservationsSection').style.display = 'none'; // Aktifleri gizle, kafası karışmasın
+                document.getElementById('reservationsSection').style.display = 'none';
                 startLiveDashboard(chargingResId);
             } else {
                 document.getElementById('liveChargingPanel').style.display = 'none';
@@ -182,151 +340,138 @@ async function loadReservations(token) {
     } catch (e) { console.error(e); }
 }
 
-// YENİ: CANLI DASHBOARD SİMÜLASYONU (FRONTEND)
-function startLiveDashboard(resId) {
-    // Şarjın başlama zamanını local storage'dan al, yoksa şu anki zamanı kaydet (Sayfa yenilense de süre devam etsin)
-    let startTime = localStorage.getItem('chargeStart_' + resId);
-    if (!startTime) {
-        startTime = Date.now();
-        localStorage.setItem('chargeStart_' + resId, startTime);
-    }
+function renderActiveRes(r, stations) {
+    let sName = "Unknown"; let cType = "";
+    stations.forEach(s => { const c = s.chargers.find(x => x.charger_id === r.charger_id); if(c) { sName = s.name; cType = c.connector_type; }});
+    return `<div class="vehicle-item" style="border-left: 4px solid #f39c12; width:100%;">
+        <div class="vehicle-info" style="width: 100%;">
+            <div style="display:flex; justify-content:space-between;"><strong>📅 ${r.date}</strong><span style="color:#f39c12; font-size:10px;">WAITING</span></div>
+            <p style="font-size:0.85rem; color:#bbb; margin:6px 0;">📍 ${sName}<br>🔌 ${cType}<br>⏰ ${r.start_time} - ${r.end_time}</p>
+            <div style="margin-top: 8px;">
+                <button onclick="startCharging('${r.reservation_id}')" style="background:#2ecc71; border:none; color:white; padding:6px 10px; border-radius:4px; font-weight:bold; cursor:pointer;">⚡ Start</button>
+                <button onclick="confirmCancelReservation('${r.reservation_id}')" style="background:none; border:1px solid #e74c3c; color:#e74c3c; padding:5px 10px; border-radius:4px; cursor:pointer;">Cancel</button>
+                <button onclick="openIssueModal('${r.charger_id}')" style="background:none; border:1px solid #f39c12; color:#f39c12; padding:5px 10px; border-radius:4px; margin-left:5px; cursor:pointer;">🚨 Report</button>
+            </div>
+        </div>
+    </div>`;
+}
 
+function renderHistoryRes(r, stations) {
+    let sName = "Station";
+    stations.forEach(s => { if(s.chargers.some(c => c.charger_id === r.charger_id)) sName = s.name; });
+    let c = r.status === 'completed' ? '#2ecc71' : '#e74c3c';
+    // BORDER-LEFT KISMI DÜZELTİLDİ (Boşluk eklendi)
+    return `<div class="vehicle-item" style="border-left: 4px solid ${c}; opacity:0.8;">
+        <div class="vehicle-info" style="width: 100%;">
+            <div style="display:flex; justify-content:space-between;"><strong>📅 ${r.date}</strong><span style="font-size:9px; color:${c};">${r.status.toUpperCase()}</span></div>
+            <p style="font-size:0.8rem; color:#888; margin:4px 0;">📍 ${sName}</p>
+            ${r.charging_session ? `<p style="font-size:10px; color:#f1c40f; margin:0;">${r.charging_session.duration_min} min | ${r.charging_session.kwh_consumed} kWh | ${r.charging_session.total_cost} ₺</p>` : ''}
+        </div>
+    </div>`;
+}
+
+function startLiveDashboard(resId) {
+    let startTime = localStorage.getItem('chargeStart_' + resId) || Date.now();
+    localStorage.setItem('chargeStart_' + resId, startTime);
     if(window.chargeInterval) clearInterval(window.chargeInterval);
 
-    // Her saniye ekranı güncelle
     window.chargeInterval = setInterval(() => {
-        let diffSeconds = Math.floor((Date.now() - startTime) / 1000);
-        let simMinutes = diffSeconds; // Backend simülasyonumuzla aynı mantık: 1 saniye = 1 dakika
-
-        // Gösterişli Ortalama Hesaplamalar (22kW Cihaz, 7.5 TL/kWh)
-        let kwh = (22 * (simMinutes / 60) * 0.8).toFixed(2);
-        let cost = (kwh * 7.5).toFixed(2);
-        let displayMin = simMinutes < 10 ? '0' + simMinutes : simMinutes;
-
-        document.getElementById('liveTime').innerText = `00:${displayMin}`;
-        document.getElementById('liveKwh').innerHTML = `${kwh} <span style="font-size:14px;">kWh</span>`;
-        document.getElementById('liveCost').innerHTML = `${cost} <span style="font-size:14px;">₺</span>`;
+        let diff = Math.floor((Date.now() - startTime) / 1000);
+        let kwh = (22 * (diff / 60) * 0.8).toFixed(2);
+        document.getElementById('liveTime').innerText = `00:${diff < 10 ? '0'+diff : diff}`;
+        document.getElementById('liveKwh').innerHTML = `${kwh}`;
+        document.getElementById('liveCost').innerHTML = `${(kwh * 7.5).toFixed(2)}`;
     }, 1000);
-
     document.getElementById('liveStopBtn').onclick = () => stopCharging(resId);
 }
 
-
-// ŞARJ İŞLEMLERİ
 window.startCharging = async function(reservationId) {
-    const token = localStorage.getItem("token");
     try {
-        const response = await fetch(`/reservations/${reservationId}/start`, {
-            method: "PATCH", headers: { "Authorization": `Bearer ${token}` }
-        });
-        if(response.ok) {
+        const res = await fetch(`/reservations/${reservationId}/start`, { method: "PATCH", headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` } });
+        if(res.ok) {
             localStorage.setItem('chargeStart_' + reservationId, Date.now());
-            addNotification("Charging session started! Energy is flowing.");
             window.location.reload();
         } else {
-            const data = await response.json();
-            window.showCustomAlert(data.detail, "Error");
+            const data = await res.json();
+            window.showCustomAlert(data.detail || "Error starting charge", "Error");
         }
     } catch (e) { console.error(e); }
 };
 
-window.stopCharging = async function(reservationId) {
-    window.showCustomConfirm("Are you sure you want to stop charging? Your final bill will be calculated.", "Stop Charge", async () => {
-        const token = localStorage.getItem("token");
+window.stopCharging = async function(resId) {
+    window.showCustomConfirm("End session?", "Stop", async () => {
         try {
-            const response = await fetch(`/reservations/${reservationId}/complete`, {
-                method: "PATCH", headers: { "Authorization": `Bearer ${token}` }
-            });
-            const data = await response.json();
-            if(response.ok) {
-                // Şarj bittiği için timer'ı sıfırla ve bildirim at
-                localStorage.removeItem('chargeStart_' + reservationId);
-                if(window.chargeInterval) clearInterval(window.chargeInterval);
-
-                addNotification(`Charging completed! Consumed: ${data.kwh} kWh. Total fee: ${data.cost} ₺.`);
-
-                const billMessage = `Session Ended!\n\nConsumed: ${data.kwh} kWh\nDuration: ${data.duration} min\nTotal Cost: ${data.cost} ₺\n\nFee adjusted from your wallet.`;
-                window.showCustomAlert(billMessage, "Invoice Summary", () => window.location.reload());
-            } else {
-                window.showCustomAlert(data.detail, "Error");
+            const res = await fetch(`/reservations/${resId}/complete`, { method: "PATCH", headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` } });
+            if(res.ok) {
+                localStorage.removeItem('chargeStart_' + resId);
+                window.location.reload();
             }
-        } catch (e) { console.error(e); }
+        } catch(e) { console.error(e); }
     });
 };
 
-window.confirmCancelReservation = function(reservationId) {
-    window.showCustomConfirm("Are you sure you want to cancel this reservation? The provision will be refunded.", "Delete Reservation?", () => executeCancel(reservationId));
+window.confirmCancelReservation = (id) => window.showCustomConfirm("Cancel booking?", "Cancel", async () => {
+    try {
+        const res = await fetch(`/reservations/${id}`, { method: "DELETE", headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` } });
+        if(res.ok) window.location.reload();
+    } catch (e) { console.error(e); }
+});
+
+window.openIssueModal = function(chargerId) {
+    window.currentIssueChargerId = chargerId;
+    document.body.insertAdjacentHTML('beforeend', `<div id="issueModal" style="position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.8); z-index:10000; display:flex; justify-content:center; align-items:center;"><div style="background:#1a2922; border:1px solid #f39c12; padding:30px; border-radius:15px; width:320px;"><h3 style="color:#f39c12; margin-top:0;">🚨 Report Issue</h3><select id="issueType" style="width:100%; padding:10px; margin-bottom:15px; border-radius:8px; border:none; background:#2c3e50; color:white;"><option value="Hardware Failure">Hardware Failure</option><option value="Software Issue">Software Issue</option><option value="Cable Damage">Cable Damage</option><option value="Other">Other</option></select><textarea id="issueDesc" placeholder="Details..." style="width:100%; height:60px; padding:10px; margin-bottom:20px; border-radius:8px; border:none; background:#2c3e50; color:white; resize:none;"></textarea><div style="display:flex; gap:15px;"><button onclick="closeIssueModal()" style="flex:1; padding:12px; background:rgba(255,255,255,0.1); border-radius:8px; color:white; cursor:pointer;">Cancel</button><button onclick="submitIssueReport()" style="flex:1; padding:12px; background:#f39c12; border:none; border-radius:8px; color:white; cursor:pointer; font-weight:bold;">Submit</button></div></div></div>`);
 };
 
-async function executeCancel(reservationId) {
-    const token = localStorage.getItem("token");
-    const response = await fetch(`/reservations/${reservationId}`, { method: "DELETE", headers: { "Authorization": `Bearer ${token}` }});
-    if(response.ok) {
-        addNotification("Reservation cancelled. Provision refunded to wallet.");
-        window.showCustomAlert("Reservation deleted. Fee refunded.", "Success", () => window.location.reload());
-    }
-}
+window.closeIssueModal = () => { const m = document.getElementById('issueModal'); if(m) m.remove(); };
 
-// DİĞER GÖRÜNÜMLER
+window.submitIssueReport = async function() {
+    const token = localStorage.getItem("token");
+    try {
+        const res = await fetch("/issue-reports/", {
+            method: "POST", headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ charger_id: window.currentIssueChargerId, description: `[${document.getElementById('issueType').value}] ${document.getElementById('issueDesc').value}` })
+        });
+        if (res.ok) {
+            closeIssueModal();
+            window.showCustomAlert("Report Sent", "Success", () => window.location.reload());
+        }
+    } catch(e) { console.error(e); }
+};
+
 function renderFavorites(favs) {
     const el = document.getElementById("favoriteStationsList");
-    if (favs.length === 0) {
-        el.innerHTML = '<p style="color:#666; width:100%; text-align:center;">No favorites yet.</p>';
-        return;
-    }
-    el.innerHTML = favs.map(s => `
-        <div class="vehicle-item" style="border-left: 4px solid #e74c3c; background: rgba(231, 76, 60, 0.05);">
-            <div class="vehicle-info">
-                <strong style="color:white;">❤️ ${s.name}</strong>
-                <p style="font-size:0.8rem; color:#bbb; margin:5px 0;">${s.address}</p>
-                <button onclick="removeFav(${s.station_id})" style="background:none; border:1px solid #e74c3c; color:#e74c3c; padding:3px 8px; border-radius:4px; cursor:pointer; font-size:10px;">Remove</button>
-            </div>
-        </div>
-    `).join('');
+    el.innerHTML = favs.length > 0 ? favs.map(s => `<div class="vehicle-item" style="border-left: 4px solid #e74c3c;"><strong>❤️ ${s.name}</strong><button onclick="removeFav('${s.station_id}')" style="background:none; border:1px solid #e74c3c; color:#e74c3c; padding:3px 8px; border-radius:4px; font-size:10px; cursor:pointer;">Remove</button></div>`).join('') : '<p style="color:#666;">No favorites.</p>';
 }
 
 window.removeFav = async (id) => {
-    const token = localStorage.getItem("token");
-    const res = await fetch(`/stations/${id}/favorite`, { method: "DELETE", headers: { "Authorization": `Bearer ${token}` } });
-    if (res.ok) window.location.reload();
+    try {
+        await fetch(`/stations/${id}/favorite`, { method: "DELETE", headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` } });
+        window.location.reload();
+    } catch(e) { console.error(e); }
 };
 
 function renderVehicles(vs) {
     const el = document.getElementById("vehicleList");
-    el.innerHTML = vs.length > 0 ? vs.map(v => `
-        <div class="vehicle-item"><strong>${v.brand} ${v.model}</strong><p>${v.plate_number}</p></div>
-    `).join('') : '<p style="color:#666;">No vehicles.</p>';
+    el.innerHTML = vs.length > 0 ? vs.map(v => `<div class="vehicle-item"><strong>${v.brand}</strong><p>${v.plate_number}</p></div>`).join('') : '<p>No vehicles.</p>';
 }
 
+// ==========================================
+// ORTAK MODALLAR VE YARDIMCI İŞLEMLER
+// ==========================================
+window.showCustomAlert = (m, t, cb) => { document.getElementById("customAlertTitle").innerText = t; document.getElementById("customAlertMessage").innerText = m; document.getElementById("customAlertModal").style.display = "flex"; window.alertCallback = cb; };
+window.closeCustomAlert = () => { document.getElementById("customAlertModal").style.display = "none"; if(window.alertCallback) window.alertCallback(); };
+window.showCustomConfirm = (message, title, onConfirm) => { document.getElementById("customConfirmTitle").innerText = title; document.getElementById("customConfirmMessage").innerText = message; document.getElementById("customConfirmModal").style.display = "flex"; window.confirmCallback = onConfirm; };
+window.closeCustomConfirm = (isConfirmed) => { document.getElementById("customConfirmModal").style.display = "none"; if (isConfirmed && window.confirmCallback) window.confirmCallback(); window.confirmCallback = null; };
 window.openTopUpModal = () => document.getElementById("topUpModal").style.display = "flex";
 window.closeTopUpModal = () => document.getElementById("topUpModal").style.display = "none";
-
 window.submitTopUp = async () => {
     const amount = parseFloat(document.getElementById("topUpAmount").value);
-    const token = localStorage.getItem("token");
-    const res = await fetch("/payments/topup", {
-        method: "POST", headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ amount, type: "TopUp", driver_id: window.currentUserId })
-    });
-    if (res.ok) {
-        addNotification(`Wallet topped up successfully with ${amount} ₺.`);
-        window.showCustomAlert("Funds added!", "Success", () => window.location.reload());
-    }
+    try {
+        const res = await fetch("/payments/topup", { method: "POST", headers: { "Authorization": `Bearer ${localStorage.getItem("token")}`, "Content-Type": "application/json" }, body: JSON.stringify({ amount, type: "TopUp", driver_id: window.currentUserId }) });
+        if (res.ok) window.location.reload();
+    } catch(e) { console.error(e); }
 };
-
-window.toggleVehicleView = (s) => {
-    document.getElementById("profileView").style.display = s ? "none" : "block";
-    document.getElementById("addView").style.display = s ? "block" : "none";
-};
-
+window.toggleVehicleView = (s) => { document.getElementById("profileView").style.display = s ? "none" : "block"; document.getElementById("addView").style.display = s ? "block" : "none"; };
 window.handleLogout = () => { localStorage.removeItem("token"); window.location.href = "/login"; };
 document.addEventListener("DOMContentLoaded", window.loadProfile);
-
-// CHARGING PULSE ANIMATION
-document.head.insertAdjacentHTML("beforeend", `<style>
-@keyframes pulse {
-  0% { opacity: 1; }
-  50% { opacity: 0.3; }
-  100% { opacity: 1; }
-}
-</style>`);
+document.head.insertAdjacentHTML("beforeend", `<style>@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } } button { cursor: pointer; }</style>`);

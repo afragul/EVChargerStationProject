@@ -6,20 +6,31 @@ let userVehicles = [];
 let favoriteStations = [];
 let selectedChargerId = null;
 
+// GİRİŞ YAPAN KULLANICININ BİLGİLERİ (Sürücü mü, Operatör mü?)
+let currentUserRole = "driver";
+let currentUserId = null;
+
 // --- CUSTOM ALERT LOGIC FOR MAP ---
-window.showCustomAlert = function(message, title = "Notification") {
+let alertCallback = null; // Alert kapandıktan sonra tetiklenecek fonksiyon
+
+window.showCustomAlert = function(message, title = "Notification", cb = null) {
     document.getElementById("customAlertTitle").innerText = title;
     document.getElementById("customAlertMessage").innerText = message;
     document.getElementById("customAlertModal").style.display = "flex";
+    alertCallback = cb; // Fonksiyonu kaydet
 };
 
 window.closeCustomAlert = function() {
     document.getElementById("customAlertModal").style.display = "none";
+    if(alertCallback) {
+        alertCallback(); // Modal kapanırken fonksiyonu çalıştır (Örn: sayfayı yenile)
+        alertCallback = null;
+    }
 };
 
 async function initMap() {
     map = new google.maps.Map(document.getElementById("map"), {
-        center: { lat: 38.4237, lng: 27.1428 },
+        center: { lat: 38.4237, lng: 27.1428 }, // İzmir Merkez
         zoom: 12,
         styles: [
             {
@@ -44,85 +55,89 @@ async function initDashboard() {
         window.location.href = "/login";
         return;
     }
-    await fetchUserVehicles(token);
-    await fetchFavoriteStations(token);
+
+    // 1. Önce giriş yapan kullanıcının kim olduğunu (Rolünü) bulalım
+    try {
+        const userRes = await fetch('/users/me', { headers: { 'Authorization': `Bearer ${token}` } });
+        if (userRes.ok) {
+            const user = await userRes.json();
+            currentUserRole = user.role;
+            currentUserId = user.user_id;
+            // Welcome mesajını isme göre güncelle
+            const welcomeTag = document.getElementById("welcomeMessage");
+            if(welcomeTag) welcomeTag.innerText = `Welcome, ${user.name} (${user.role.toUpperCase()})`;
+        }
+    } catch (error) { console.error("Kullanıcı bilgisi çekilemedi:", error); }
+
+    // 2. Sadece rolü 'driver' olanlar için araç ve favorileri çekelim (403 Hatalarını Önler)
+    if (currentUserRole === 'driver') {
+        await fetchUserVehicles(token);
+        await fetchFavoriteStations(token);
+    }
+
     loadStations();
     getUserLocation();
 }
 
 async function fetchUserVehicles(token) {
     try {
-        const response = await fetch('/vehicles/me', {
-            method: 'GET',
-            headers: { 'Authorization': `Bearer ${token}` }
-        });
-        if (response.ok) {
-            userVehicles = await response.json();
-        }
-    } catch (error) {
-        console.error("Error loading vehicles:", error);
-    }
+        const response = await fetch('/vehicles/me', { method: 'GET', headers: { 'Authorization': `Bearer ${token}` }});
+        if (response.ok) userVehicles = await response.json();
+    } catch (error) { console.error(error); }
 }
 
 async function fetchFavoriteStations(token) {
     try {
-        const response = await fetch('/stations/favorites/me', {
-            method: 'GET',
-            headers: { 'Authorization': `Bearer ${token}` }
-        });
-        if (response.ok) {
-            const data = await response.json();
-            favoriteStations = data.map(s => s.station_id);
-        }
-    } catch (error) {
-        console.error("Error loading favorite stations:", error);
-    }
+        const response = await fetch('/stations/favorites/me', { method: 'GET', headers: { 'Authorization': `Bearer ${token}` }});
+        if (response.ok) favoriteStations = (await response.json()).map(s => s.station_id);
+    } catch (error) { console.error(error); }
 }
 
 async function loadStations() {
     try {
         const token = localStorage.getItem('token');
 
-        // 1. Yol tarifi kilidi için kullanıcının aktif rezervasyonlarını çek
-        const resResponse = await fetch('/reservations/me', {
-            method: 'GET',
-            headers: { 'Authorization': `Bearer ${token}` }
-        });
-        const myReservations = resResponse.ok ? await resResponse.json() : [];
+        // Sadece Sürücü ise rezervasyonlarını çek (Yol tarifi kilidi için)
+        let myReservations = [];
+        if (currentUserRole === 'driver') {
+            const resResponse = await fetch('/reservations/me', { method: 'GET', headers: { 'Authorization': `Bearer ${token}` }});
+            if (resResponse.ok) myReservations = await resResponse.json();
+        }
 
-        // 2. İstasyonları çek
-        const response = await fetch('/stations/', {
-            method: 'GET',
-            headers: {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json'
-            }
-        });
-
+        // İstasyonları çek
+        const response = await fetch('/stations/', { method: 'GET', headers: { 'Authorization': `Bearer ${token}` } });
         if (!response.ok) return;
         const stations = await response.json();
 
         stations.forEach(station => {
             let isStationCompatible = false;
 
-            // Kullanıcının bu istasyonda aktif bir rezervasyonu var mı?
+            // Sürücünün aktif rezervasyonu var mı kontrolü
             const hasActiveBooking = myReservations.some(res =>
                 station.chargers.some(c => c.charger_id === res.charger_id) &&
                 (res.status === "active" || res.status === "confirmed")
             );
 
+            // Cihazlar Listesi
             let chargersHtml = "";
             station.chargers.forEach(c => {
-                const isCompatible = userVehicles.some(v => v.connector_type === c.connector_type);
+                const isCompatible = currentUserRole === 'driver' ? userVehicles.some(v => v.connector_type === c.connector_type) : false;
                 if (isCompatible) isStationCompatible = true;
 
                 let actionHtml = "";
-                if (c.status === "available" && isCompatible) {
-                    actionHtml = `<button onclick="window.openReservationModal(${c.charger_id}, '${c.connector_type}')" style="background:#28a745; color:white; border:none; padding:4px 8px; cursor:pointer; border-radius: 4px; font-size: 11px; font-weight:bold;">Reserve</button>`;
-                } else if (!isCompatible) {
-                    actionHtml = `<span style="color:#e74c3c; font-size:11px; font-weight:bold;">Incompatible</span>`;
+                // Sadece Sürücüler "Reserve" butonunu görebilir
+                if (currentUserRole === 'driver') {
+                    if (c.status === "available" && isCompatible) {
+                        actionHtml = `<button onclick="window.openReservationModal(${c.charger_id}, '${c.connector_type}')" style="background:#28a745; color:white; border:none; padding:4px 8px; cursor:pointer; border-radius: 4px; font-size: 11px; font-weight:bold;">Reserve</button>`;
+                    } else if (!isCompatible) {
+                        actionHtml = `<span style="color:#e74c3c; font-size:11px; font-weight:bold;">Incompatible</span>`;
+                    } else {
+                        actionHtml = `<span style="color:#888; font-size:11px; font-weight:bold;">Occupied</span>`;
+                    }
                 } else {
-                    actionHtml = `<span style="color:#888; font-size:11px; font-weight:bold;">Occupied</span>`;
+                    // Operatör sadece durumunu görür
+                    const statColor = c.status === 'available' ? '#2ecc71' : (c.status === 'occupied' ? '#f39c12' : '#e74c3c');
+                    actionHtml = `<span style="color:${statColor}; font-size:11px; font-weight:bold;">${c.status.toUpperCase()}</span>`;
                 }
 
                 chargersHtml += `
@@ -132,23 +147,41 @@ async function loadStations() {
                     </div>`;
             });
 
-            // --- YOL TARİFİ BUTONU MANTIĞI ---
-            let directionsBtnHtml = "";
-            if (!hasActiveBooking) {
-                directionsBtnHtml = `<button onclick="window.showCustomAlert('You must have an active reservation at this station to get directions.', 'Reservation Required')" style="background:#95a5a6; color:white; border:none; padding:12px; width:100%; cursor:not-allowed; border-radius: 8px; font-weight:bold; font-size:13px;">🔒 Reserve to Get Directions</button>`;
-            } else {
-                directionsBtnHtml = `<button onclick="window.getDirections(${station.latitude}, ${station.longitude})" style="background:#3498db; color:white; border:none; padding:12px; width:100%; cursor:pointer; border-radius: 8px; font-weight:bold; font-size:13px;">📍 Get Directions</button>`;
-            }
+            // Alt Kısım Butonları (Rol'e Göre Değişir)
+            let actionSectionHtml = "";
+            let heartHtml = "";
 
-            const isFavorite = favoriteStations.includes(station.station_id);
-            const heartColor = isFavorite ? "#e74c3c" : "#bdc3c7";
+            if (currentUserRole === "operator") {
+                // OPERATÖR GÖRÜNÜMÜ: İstasyon Alma Mantığı
+                if (!station.operator_id) {
+                    actionSectionHtml = `
+                        <button onclick="window.claimStation(${station.station_id})" style="background:#f39c12; color:white; border:none; padding:12px; width:100%; cursor:pointer; border-radius: 8px; font-weight:bold; font-size:13px; margin-top:5px; transition:0.3s; box-shadow: 0 4px 6px rgba(243, 156, 18, 0.3);">
+                            ⚡ Claim Station
+                        </button>`;
+                } else if (station.operator_id === currentUserId) {
+                    actionSectionHtml = `<div style="margin-top:10px; text-align:center; font-size:12px; color:#2ecc71; font-weight:bold; padding:8px; background:rgba(46, 204, 113, 0.1); border-radius:8px;">✅ Managed by You</div>`;
+                } else {
+                    actionSectionHtml = `<div style="margin-top:10px; text-align:center; font-size:12px; color:#e74c3c; font-weight:bold; padding:8px; background:rgba(231, 76, 60, 0.1); border-radius:8px;">🔒 Managed by another operator</div>`;
+                }
+            } else if (currentUserRole === "driver") {
+                // SÜRÜCÜ GÖRÜNÜMÜ: Yol Tarifi ve Favori Ekleme Mantığı
+                const isFavorite = favoriteStations.includes(station.station_id);
+                const heartColor = isFavorite ? "#e74c3c" : "#bdc3c7";
+                heartHtml = `<i id="h-${station.station_id}" class="fas fa-heart" onclick="window.toggleFavorite(${station.station_id})" style="color:${heartColor}; cursor:pointer; font-size:18px;"></i>`;
+
+                if (!hasActiveBooking) {
+                    actionSectionHtml = `<button onclick="window.showCustomAlert('You must have an active reservation at this station to get directions.', 'Reservation Required')" style="background:#95a5a6; color:white; border:none; padding:12px; width:100%; cursor:not-allowed; border-radius: 8px; font-weight:bold; font-size:13px;">🔒 Reserve to Get Directions</button>`;
+                } else {
+                    actionSectionHtml = `<button onclick="window.getDirections(${station.latitude}, ${station.longitude})" style="background:#3498db; color:white; border:none; padding:12px; width:100%; cursor:pointer; border-radius: 8px; font-weight:bold; font-size:13px;">📍 Get Directions</button>`;
+                }
+            }
 
             const infoWindow = new google.maps.InfoWindow({
                 content: `
                     <div style="width:240px; padding:5px; color: #2c3e50 !important; font-family: 'Segoe UI', sans-serif;">
                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
                             <b style="font-size:15px; color: #2c3e50 !important;">${station.name}</b>
-                            <i id="h-${station.station_id}" class="fas fa-heart" onclick="window.toggleFavorite(${station.station_id})" style="color:${heartColor}; cursor:pointer; font-size:18px;"></i>
+                            ${heartHtml}
                         </div>
                         <p style="margin: 0 0 10px 0; font-size: 11px; color: #555 !important;">${station.address}</p>
                         
@@ -156,19 +189,25 @@ async function loadStations() {
                             <label style="font-size:10px; color:#95a5a6; font-weight:bold; display:block; margin-bottom:5px;">CHARGERS</label>
                             ${chargersHtml}
                         </div>
-                        ${directionsBtnHtml}
+                        ${actionSectionHtml}
                     </div>`
             });
+
+            // Marker Renkleri (Sarı: Operatör için boş İstasyon)
+            let iconUrl = "http://maps.google.com/mapfiles/ms/icons/green-dot.png";
+            if (currentUserRole === 'operator' && !station.operator_id) {
+                iconUrl = "http://maps.google.com/mapfiles/ms/icons/yellow-dot.png";
+            } else if (currentUserRole === 'operator' && station.operator_id === currentUserId) {
+                iconUrl = "http://maps.google.com/mapfiles/ms/icons/blue-dot.png";
+            }
 
             const marker = new google.maps.Marker({
                 position: { lat: station.latitude, lng: station.longitude },
                 map: map,
-                icon: "http://maps.google.com/mapfiles/ms/icons/green-dot.png"
+                icon: iconUrl
             });
 
-            marker.addListener("click", () => {
-                infoWindow.open(map, marker);
-            });
+            marker.addListener("click", () => infoWindow.open(map, marker));
         });
 
     } catch (err) {
@@ -176,31 +215,42 @@ async function loadStations() {
     }
 }
 
+// YENİ: OPERATÖR İÇİN İSTASYONU ÜZERİNE ALMA FONKSİYONU
+window.claimStation = async function(stationId) {
+    const token = localStorage.getItem("token");
+    try {
+        const response = await fetch(`/operators/stations/${stationId}/claim`, {
+            method: 'PATCH',
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        if (response.ok) {
+            window.showCustomAlert("This station has been successfully added to your management panel!", "Station Claimed ⚡", () => window.location.reload());
+        } else {
+            const data = await response.json();
+            window.showCustomAlert(data.detail || "Failed to claim station.", "Error");
+        }
+    } catch (e) {
+        window.showCustomAlert("Connection error.", "Error");
+    }
+};
+
 window.toggleFavorite = async function(stationId) {
     const token = localStorage.getItem("token");
     const isFav = favoriteStations.includes(stationId);
-
     try {
         const response = await fetch(`/stations/${stationId}/favorite`, {
             method: isFav ? "DELETE" : "POST",
             headers: { "Authorization": `Bearer ${token}` }
         });
-
         if (response.ok) {
-            if (isFav) {
-                favoriteStations = favoriteStations.filter(id => id !== stationId);
-            } else {
-                favoriteStations.push(stationId);
-            }
+            if (isFav) favoriteStations = favoriteStations.filter(id => id !== stationId);
+            else favoriteStations.push(stationId);
+
             const heart = document.getElementById(`h-${stationId}`);
             if (heart) heart.style.color = isFav ? "#bdc3c7" : "#e74c3c";
-        } else {
-            const err = await response.json();
-            showCustomAlert(err.detail || "Action failed.", "Error");
         }
-    } catch (e) {
-        console.error("Favorite toggle error:", e);
-    }
+    } catch (e) { console.error(e); }
 };
 
 function getUserLocation() {
@@ -208,10 +258,8 @@ function getUserLocation() {
         navigator.geolocation.getCurrentPosition((position) => {
             userLocation = { lat: position.coords.latitude, lng: position.coords.longitude };
             new google.maps.Marker({
-                position: userLocation,
-                map: map,
-                icon: "http://maps.google.com/mapfiles/ms/icons/blue-dot.png",
-                title: "Your Location"
+                position: userLocation, map: map,
+                icon: "http://maps.google.com/mapfiles/ms/icons/blue-dot.png", title: "Your Location"
             });
             map.setCenter(userLocation);
         });
@@ -219,21 +267,11 @@ function getUserLocation() {
 }
 
 window.getDirections = function(destLat, destLng) {
-    if (!userLocation) {
-        showCustomAlert("Please allow location access first.", "Location Error");
-        return;
-    }
-    const request = {
-        origin: userLocation,
-        destination: { lat: destLat, lng: destLng },
-        travelMode: 'DRIVING'
-    };
+    if (!userLocation) { window.showCustomAlert("Please allow location access first.", "Location Error"); return; }
+    const request = { origin: userLocation, destination: { lat: destLat, lng: destLng }, travelMode: 'DRIVING' };
     directionsService.route(request, function(result, status) {
-        if (status === 'OK') {
-            directionsRenderer.setDirections(result);
-        } else {
-            showCustomAlert("Directions failed: " + status, "Routing Error");
-        }
+        if (status === 'OK') directionsRenderer.setDirections(result);
+        else window.showCustomAlert("Directions failed: " + status, "Routing Error");
     });
 };
 
@@ -256,8 +294,7 @@ window.openReservationModal = function(chargerId, connectorType) {
             vehicleSelect.appendChild(o);
         });
     }
-    const today = new Date().toISOString().split('T')[0];
-    document.getElementById("resDate").value = today;
+    document.getElementById("resDate").value = new Date().toISOString().split('T')[0];
 };
 
 window.closeReservationModal = () => document.getElementById("reservationModal").style.display = "none";
@@ -275,8 +312,7 @@ window.submitReservation = async function(e) {
 
     try {
         const response = await fetch("/reservations/", {
-            method: "POST",
-            headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
+            method: "POST", headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
             body: JSON.stringify(payload)
         });
 
@@ -287,9 +323,7 @@ window.submitReservation = async function(e) {
             const data = await response.json();
             window.showCustomAlert(data.detail || "Reservation failed.", "Error");
         }
-    } catch (err) {
-        window.showCustomAlert("Connection error.", "Error");
-    }
+    } catch (err) { window.showCustomAlert("Connection error.", "Error"); }
 };
 
 window.logout = function() {
