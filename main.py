@@ -1,6 +1,5 @@
-from fastapi import FastAPI, Request # Request buraya eklendi
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 import os
@@ -91,5 +90,5 @@ async def get_profile(request: Request):
     return templates.TemplateResponse(
         request=request,
         name="profile.html",
-        context={} # Artık buraya user göndermemize gerek yok
+        context={}
     )

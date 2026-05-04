@@ -4,21 +4,24 @@ import enum
 from database import Base
 from datetime import datetime
 
+
 class ChargerStatus(str, enum.Enum):
     available = "available"
     occupied = "occupied"
     offline = "offline"
 
-# ---------- YENİ: FAVORİ İSTASYONLAR ARA TABLOSU ----------
+
+# ---------- FAVORİ İSTASYONLAR ARA TABLOSU ----------
 driver_favorite_stations = Table(
     "driver_favorite_stations",
     Base.metadata,
     Column("driver_id", Integer, ForeignKey("drivers.driver_id"), primary_key=True),
     Column("station_id", Integer, ForeignKey("stations.station_id"), primary_key=True)
 )
+
+
 # ----------------------------------------------------------
 
-#user table:
 class User(Base):
     __tablename__ = "users"
 
@@ -33,31 +36,31 @@ class User(Base):
     operator_profile = relationship("Operator", back_populates="user", uselist=False)
     admin_profile = relationship("Admin", back_populates="user", uselist=False)
 
+
 class Driver(Base):
     __tablename__ = "drivers"
     driver_id = Column(Integer, ForeignKey("users.user_id"), primary_key=True, index=True)
     wallet_balance = Column(Float, default=0.0)
 
-    # iliskiler
     user = relationship("User", back_populates="driver_profile")
     vehicles = relationship("Vehicle", back_populates="owner")
     reservations = relationship("Reservation", back_populates="driver")
     payments = relationship("Payment", back_populates="driver")
 
-    # ---------- YENİ: FAVORİ İSTASYONLAR İLİŞKİSİ ----------
     favorite_stations = relationship(
         "Station",
         secondary=driver_favorite_stations,
         back_populates="favorited_by"
     )
 
+
 class Operator(Base):
     __tablename__ = "operators"
     operator_id = Column(Integer, ForeignKey("users.user_id"), primary_key=True)
 
-    # ilişkiler
     user = relationship("User", back_populates="operator_profile")
     managed_stations = relationship("Station", back_populates="manager")
+
 
 class Admin(Base):
     __tablename__ = "admins"
@@ -65,12 +68,12 @@ class Admin(Base):
 
     user = relationship("User", back_populates="admin_profile")
 
-#station table
+
 class Station(Base):
     __tablename__ = "stations"
     station_id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)
-    address = Column(String , nullable=False)
+    address = Column(String, nullable=False)
     latitude = Column(Float)
     longitude = Column(Float)
     operating_hours = Column(String)
@@ -79,30 +82,28 @@ class Station(Base):
     manager = relationship("Operator", back_populates="managed_stations")
     chargers = relationship("Charger", back_populates="station")
 
-    # ---------- YENİ: İSTASYONU FAVORİLEYEN SÜRÜCÜLER ----------
     favorited_by = relationship(
         "Driver",
         secondary=driver_favorite_stations,
         back_populates="favorite_stations"
     )
 
-#charger table
+
 class Charger(Base):
     __tablename__ = "chargers"
     charger_id = Column(Integer, primary_key=True, index=True)
-
     station_id = Column(Integer, ForeignKey("stations.station_id"))
 
-    type = Column(String)  # AC veya DC
+    type = Column(String)
     power_kW = Column(Integer)
-    connector_type = Column(String)  # Type 2, CCS vs
+    connector_type = Column(String)
     price_per_kWh = Column(Float)
     status = Column(Enum(ChargerStatus), default=ChargerStatus.available)
 
     station = relationship("Station", back_populates="chargers")
     reports = relationship("IssueReport", back_populates="charger")
 
-#vehicle table
+
 class Vehicle(Base):
     __tablename__ = "vehicles"
     vehicle_id = Column(Integer, primary_key=True, index=True)
@@ -115,7 +116,7 @@ class Vehicle(Base):
 
     owner = relationship("Driver", back_populates="vehicles")
 
-#reservation table
+
 class Reservation(Base):
     __tablename__ = "reservations"
     reservation_id = Column(Integer, primary_key=True, index=True)
@@ -125,19 +126,22 @@ class Reservation(Base):
     date = Column(Date)
     start_time = Column(Time)
     end_time = Column(Time)
-
     status = Column(String, default="active")
+
+    # YENİ: Şarjın tam olarak başladığı saniyeyi tutacak sütun
+    actual_start_time = Column(DateTime, nullable=True)
 
     driver = relationship("Driver", back_populates="reservations")
     charger = relationship("Charger")
     payment = relationship("Payment", back_populates="reservation", uselist=False)
     charging_session = relationship("ChargingSession", back_populates="reservation", uselist=False)
 
-#payment table
+
 class PaymentType(str, enum.Enum):
     topup = "TopUp"
     charge = "Charge"
     refund = "Refund"
+
 
 class Payment(Base):
     __tablename__ = "payments"
@@ -151,10 +155,11 @@ class Payment(Base):
     driver = relationship("Driver", back_populates="payments")
     reservation = relationship("Reservation", back_populates="payment")
 
-#issuereport table
+
 class ReportStatus(str, enum.Enum):
     open = "open"
     resolved = "resolved"
+
 
 class IssueReport(Base):
     __tablename__ = "issue_reports"
@@ -167,7 +172,7 @@ class IssueReport(Base):
 
     charger = relationship("Charger", back_populates="reports")
 
-#chargingsession table
+
 class ChargingSession(Base):
     __tablename__ = "charging_sessions"
     charging_session_id = Column(Integer, primary_key=True, index=True)

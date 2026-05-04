@@ -180,9 +180,9 @@ class StationUpdate(BaseModel):
 
 # charging session şema
 class ChargingSessionBase(BaseModel):
-    start_soc: float
-    # Aşağıdaki değerler şarj başlarken default 0 gelir, bittiğinde update edilir
-    end_soc: float = 0.0
+    # ÇÖZÜM BURADA: Boş (null) gelebilecek değerleri Optional yaptık
+    start_soc: Optional[float] = None
+    end_soc: Optional[float] = None
     kwh_consumed: float = 0.0
     total_cost: float = 0.0
     duration_min: int = 0

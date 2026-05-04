@@ -14,7 +14,6 @@ except ImportError:
 router = APIRouter(prefix="/reservations", tags=["Reservations"])
 
 
-# 1. REZERVASYON OLUŞTURMA (POST)
 @router.post("/", response_model=schemas.ReservationResponse)
 def create_reservation(
         req: schemas.ReservationCreate,
@@ -46,7 +45,6 @@ def create_reservation(
             detail=f"Uyumsuz Soket! Aracınız {vehicle.connector_type}, ancak cihaz {charger.connector_type} destekliyor."
         )
 
-    # Sadece 'active' ve 'charging' durumundaki rezervasyonlarla çakışma kontrolü
     overlapping_reservation = db.query(models.Reservation).filter(
         models.Reservation.charger_id == req.charger_id,
         models.Reservation.date == req.date,
@@ -56,12 +54,9 @@ def create_reservation(
     ).first()
 
     if overlapping_reservation:
-        raise HTTPException(
-            status_code=400,
-            detail="Seçilen tarih ve saat dilimi, bu cihazdaki başka bir rezervasyon ile çakışıyor."
-        )
+        raise HTTPException(status_code=400,
+                            detail="Seçilen tarih ve saat dilimi, bu cihazdaki başka bir rezervasyon ile çakışıyor.")
 
-    # Sürücünün aynı gün içinde birden fazla aktif rezervasyonu olmasın
     existing_user_reservation = db.query(models.Reservation).filter(
         models.Reservation.driver_id == driver.driver_id,
         models.Reservation.date == req.date,
@@ -69,16 +64,12 @@ def create_reservation(
     ).first()
 
     if existing_user_reservation:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Bu tarih için zaten aktif bir rezervasyonunuz var. Yenisini yapmadan önce onu tamamlamalı veya iptal etmelisiniz."
-        )
+        raise HTTPException(status_code=400,
+                            detail="Bu tarih için zaten aktif bir rezervasyonunuz var. Yenisini yapmadan önce onu tamamlamalı veya iptal etmelisiniz.")
 
     if driver.wallet_balance < DEFAULT_PROVISION_AMOUNT:
-        raise HTTPException(
-            status_code=402,
-            detail=f"Yetersiz bakiye. Rezervasyon için {DEFAULT_PROVISION_AMOUNT} TL gereklidir."
-        )
+        raise HTTPException(status_code=402,
+                            detail=f"Yetersiz bakiye. Rezervasyon için {DEFAULT_PROVISION_AMOUNT} TL gereklidir.")
 
     driver.wallet_balance -= DEFAULT_PROVISION_AMOUNT
 
@@ -98,24 +89,16 @@ def create_reservation(
     return new_reservation
 
 
-# 2. SÜRÜCÜNÜN KENDİ REZERVASYONLARI (GET)
 @router.get("/me", response_model=List[schemas.ReservationResponse])
-def get_my_reservations(
-        db: Session = Depends(get_db),
-        current_user: models.User = Depends(get_current_user)
-):
+def get_my_reservations(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     if current_user.role != "driver":
         raise HTTPException(status_code=403, detail="Sadece sürücüler bu alanı görebilir.")
     return db.query(models.Reservation).filter(models.Reservation.driver_id == current_user.user_id).all()
 
 
-# 3. YÖNETİM: TÜM REZERVASYONLARI LİSTELEME (GET)
 @router.get("/", response_model=List[schemas.ReservationResponse])
-def get_all_reservations(
-        charger_id: Optional[int] = None,
-        db: Session = Depends(get_db),
-        current_user: models.User = Depends(get_current_user)
-):
+def get_all_reservations(charger_id: Optional[int] = None, db: Session = Depends(get_db),
+                         current_user: models.User = Depends(get_current_user)):
     if current_user.role not in ["admin", "operator"]:
         raise HTTPException(status_code=403, detail="Yetkisiz erişim.")
     query = db.query(models.Reservation)
@@ -124,26 +107,18 @@ def get_all_reservations(
     return query.all()
 
 
-# 4. TEKİL REZERVASYON DETAYI (GET)
 @router.get("/{reservation_id}", response_model=schemas.ReservationResponse)
-def get_reservation(
-        reservation_id: int,
-        db: Session = Depends(get_db),
-        current_user: models.User = Depends(get_current_user)
-):
+def get_reservation(reservation_id: int, db: Session = Depends(get_db),
+                    current_user: models.User = Depends(get_current_user)):
     reservation = db.query(models.Reservation).filter(models.Reservation.reservation_id == reservation_id).first()
     if not reservation:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı.")
     return reservation
 
 
-# 5. YENİ: İPTAL ET VE VERİTABANINDAN TAMAMEN SİL (DELETE)
 @router.delete("/{reservation_id}")
-def delete_reservation(
-        reservation_id: int,
-        db: Session = Depends(get_db),
-        current_user: models.User = Depends(get_current_user)
-):
+def delete_reservation(reservation_id: int, db: Session = Depends(get_db),
+                       current_user: models.User = Depends(get_current_user)):
     reservation = db.query(models.Reservation).filter(models.Reservation.reservation_id == reservation_id).first()
     if not reservation:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı.")
@@ -152,27 +127,20 @@ def delete_reservation(
         raise HTTPException(status_code=403, detail="Sadece kendi rezervasyonlarınızı iptal edebilirsiniz.")
 
     if reservation.status != "active":
-        raise HTTPException(status_code=400, detail=f"Sadece 'active' durumdaki rezervasyonlar silinebilir.")
+        raise HTTPException(status_code=400, detail="Sadece 'active' durumdaki rezervasyonlar silinebilir.")
 
-    # Cüzdana ücret iadesi
     driver = db.query(models.Driver).filter(models.Driver.driver_id == current_user.user_id).first()
     if driver:
         driver.wallet_balance += DEFAULT_PROVISION_AMOUNT
 
-    # Veritabanından tamamen sil (Hard Delete)
     db.delete(reservation)
     db.commit()
-
     return {"message": "Rezervasyon veritabanından tamamen silindi ve ücret iade edildi."}
 
 
-# 6. ŞARJI BAŞLATMA (PATCH)
 @router.patch("/{reservation_id}/start")
-def start_charging(
-        reservation_id: int,
-        db: Session = Depends(get_db),
-        current_user: models.User = Depends(get_current_user)
-):
+def start_charging(reservation_id: int, db: Session = Depends(get_db),
+                   current_user: models.User = Depends(get_current_user)):
     reservation = db.query(models.Reservation).filter(models.Reservation.reservation_id == reservation_id).first()
     if not reservation or reservation.driver_id != current_user.user_id:
         raise HTTPException(status_code=404, detail="Geçerli bir rezervasyon bulunamadı.")
@@ -181,19 +149,19 @@ def start_charging(
         raise HTTPException(status_code=400, detail="Sadece 'active' durumdaki rezervasyonlar başlatılabilir.")
 
     reservation.status = "charging"
+    # YENİ: Şarjın başlatıldığı tam zamanı kaydediyoruz
+    reservation.actual_start_time = datetime.now()
+
     charger = db.query(models.Charger).filter(models.Charger.charger_id == reservation.charger_id).first()
-    if charger: charger.status = "occupied"
+    if charger:
+        charger.status = "occupied"
     db.commit()
-    return {"message": "Şarj işlemi başarıyla başlatıldı."}
+    return {"message": "Şarj işlemi başladı! Enerji aktarılıyor..."}
 
 
-# 7. ŞARJI BİTİRME (PATCH)
 @router.patch("/{reservation_id}/complete")
-def complete_charging(
-        reservation_id: int,
-        db: Session = Depends(get_db),
-        current_user: models.User = Depends(get_current_user)
-):
+def complete_charging(reservation_id: int, db: Session = Depends(get_db),
+                      current_user: models.User = Depends(get_current_user)):
     reservation = db.query(models.Reservation).filter(models.Reservation.reservation_id == reservation_id).first()
     if not reservation or reservation.driver_id != current_user.user_id:
         raise HTTPException(status_code=404, detail="Geçerli bir rezervasyon bulunamadı.")
@@ -201,21 +169,58 @@ def complete_charging(
     if reservation.status != "charging":
         raise HTTPException(status_code=400, detail="Sadece 'charging' durumundaki işlemler tamamlanabilir.")
 
-    reservation.status = "completed"
+    driver = db.query(models.Driver).filter(models.Driver.driver_id == current_user.user_id).first()
     charger = db.query(models.Charger).filter(models.Charger.charger_id == reservation.charger_id).first()
-    if charger: charger.status = "available"
+
+    # YENİ SİMÜLASYON: Gerçek saniyeyi dakikaymış gibi hesaplama
+    if reservation.actual_start_time:
+        time_difference = datetime.now() - reservation.actual_start_time
+        actual_seconds = time_difference.total_seconds()
+        simulated_duration_min = max(1, int(actual_seconds))  # 1 saniye = 1 dakika olarak kabul ediyoruz
+    else:
+        simulated_duration_min = 1
+
+    simulated_kwh = round((charger.power_kW * (simulated_duration_min / 60)) * 0.8, 2)
+    price_per_kwh = charger.price_per_kWh if charger.price_per_kWh else 7.5
+    total_cost = round(simulated_kwh * price_per_kwh, 2)
+
+    # Önce provizyonu iade et, sonra faturayı kes
+    driver.wallet_balance += DEFAULT_PROVISION_AMOUNT
+    driver.wallet_balance -= total_cost
+
+    new_payment = models.Payment(
+        driver_id=driver.driver_id,
+        reservation_id=reservation.reservation_id,
+        amount=total_cost,
+        type="Charge"
+    )
+    db.add(new_payment)
+
+    new_session = models.ChargingSession(
+        reservation_id=reservation.reservation_id,
+        kwh_consumed=simulated_kwh,
+        total_cost=total_cost,
+        duration_min=simulated_duration_min
+    )
+    db.add(new_session)
+
+    reservation.status = "completed"
+    if charger:
+        charger.status = "available"
+
     db.commit()
-    return {"message": "Şarj işlemi tamamlandı. Cihaz ayrıldı."}
+
+    return {
+        "message": "Şarj tamamlandı.",
+        "kwh": simulated_kwh,
+        "cost": total_cost,
+        "duration": simulated_duration_min
+    }
 
 
-# 8. BELİRLİ BİR CİHAZIN GÜNLÜK DOLU SAATLERİNİ GETİRME (GET)
 @router.get("/charger/{charger_id}/schedule")
-def get_charger_schedule(
-        charger_id: int,
-        target_date: date,
-        db: Session = Depends(get_db),
-        current_user: models.User = Depends(get_current_user)
-):
+def get_charger_schedule(charger_id: int, target_date: date, db: Session = Depends(get_db),
+                         current_user: models.User = Depends(get_current_user)):
     reservations = db.query(models.Reservation).filter(
         models.Reservation.charger_id == charger_id,
         models.Reservation.date == target_date,
