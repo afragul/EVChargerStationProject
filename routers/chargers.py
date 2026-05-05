@@ -43,7 +43,7 @@ def cancel_active_reservations_for_offline_charger(charger_id: int, db: Session)
 def get_chargers_by_station(station_id: int, db: Session = Depends(get_db)):
     chargers = db.query(models.Charger).filter(models.Charger.station_id == station_id).all()
     if not chargers:
-        raise HTTPException(status_code=404, detail="Bu istasyona ait şarj cihazı bulunamadı.")
+        raise HTTPException(status_code=404, detail="No charger could be found for this station.")
     return chargers
 
 # 2. Şarj Cihazı Durumunu Güncelleme offline / available
@@ -56,12 +56,12 @@ def update_charger_status(
 ):
     # a. Rol kontrolü
     if current_user.role not in ["operator", "admin"]:
-        raise HTTPException(status_code=403, detail="Bu işlem için yetkiniz bulunmamaktadır.")
+        raise HTTPException(status_code=403, detail="You do not have authorization to perform this action.")
 
     # b. Cihazı veritabanından bul
     charger = db.query(models.Charger).filter(models.Charger.charger_id == charger_id).first()
     if not charger:
-        raise HTTPException(status_code=404, detail="Şarj cihazı bulunamadı.")
+        raise HTTPException(status_code=404, detail="Charger not found.")
 
     # c. REQ-O05 KONTROLÜ: Operatör yetki sınırı!
     if current_user.role == "operator":
@@ -74,14 +74,14 @@ def update_charger_status(
         if charger.station_id not in managed_station_ids:
             raise HTTPException(
                 status_code=403, 
-                detail="Sadece sorumlu olduğunuz istasyonlardaki cihazları yönetebilirsiniz."
+                detail="You can only manage the equipment at the stations you are responsible for."
             )
 
     # Geçerli bir status gönderildiğinden emin ol
     try:
         new_enum_status = models.ChargerStatus(payload.status)
     except ValueError:
-         raise HTTPException(status_code=400, detail="Geçersiz durum (status) değeri. 'available', 'occupied' veya 'offline' olmalıdır.")
+         raise HTTPException(status_code=400, detail="Invalid status value. Must be 'available', 'occupied', or 'offline'.")
 
     # d. Durumu güncelle ve kaydet
     charger.status = new_enum_status
@@ -92,7 +92,7 @@ def update_charger_status(
         cancel_active_reservations_for_offline_charger(charger_id, db)
 
 
-    return {"message": "Cihaz durumu başarıyla güncellendi.", "charger_id": charger.charger_id, "new_status": charger.status}
+    return {"message": "Device status has been successfully updated.", "charger_id": charger.charger_id, "new_status": charger.status}
 
 # Yeni Şarj Cihazı Oluşturma (POST)
 @router.post("/", response_model=schemas.ChargerResponse)
@@ -100,7 +100,7 @@ def create_charger(req: schemas.ChargerCreate, db: Session = Depends(get_db)):
     # Önce böyle bir istasyon var mı diye kontrol edelim
     station = db.query(models.Station).filter(models.Station.station_id == req.station_id).first()
     if not station:
-        raise HTTPException(status_code=404, detail="Belirtilen station_id ile bir istasyon bulunamadı.")
+        raise HTTPException(status_code=404, detail="No station was found with the specified station_id.")
 
     new_charger = models.Charger(
         station_id=req.station_id,
@@ -137,7 +137,7 @@ def get_charger(
 ):
     charger = db.query(models.Charger).filter(models.Charger.charger_id == charger_id).first()
     if not charger:
-        raise HTTPException(status_code=404, detail="Şarj cihazı bulunamadı.")
+        raise HTTPException(status_code=404, detail="Charger not found.")
     
     return charger
 
@@ -150,13 +150,13 @@ def delete_charger(
     current_user: models.User = Depends(get_current_user) # Güvenlik için yetki ekledik
 ):
     if current_user.role not in ["operator", "admin"]:
-        raise HTTPException(status_code=403, detail="Bu işlem için yetkiniz bulunmamaktadır.")
+        raise HTTPException(status_code=403, detail="You do not have authorization to perform this action.")
 
     charger = db.query(models.Charger).filter(models.Charger.charger_id == charger_id).first()
     if not charger:
-        raise HTTPException(status_code=404, detail="Şarj cihazı bulunamadı.")
+        raise HTTPException(status_code=404, detail="Charger not found.")
     
     db.delete(charger)
     db.commit()
     
-    return {"message": f"{charger_id} ID'li şarj cihazı başarıyla silindi."}
+    return {"message": f"Charger with ID {charger_id} has been successfully deleted."}

@@ -50,15 +50,15 @@ if (registerForm) {
 
             if (response.ok) {
                 messageDiv.style.color = "#28a745";
-                messageDiv.innerText = "Hesap başarıyla oluşturuldu! Girişe yönlendiriliyorsunuz...";
+                messageDiv.innerText = "Account created successfully! You are being redirected to login...";
                 setTimeout(() => window.location.href = "/login", 2000);
             } else {
                 messageDiv.style.color = "#ff6b6b";
-                messageDiv.innerText = result.detail || "Kayıt başarısız.";
+                messageDiv.innerText = result.detail || "Registration failed.";
             }
         } catch (error) {
             messageDiv.style.color = "#ff6b6b";
-            messageDiv.innerText = "Sunucu bağlantı hatası.";
+            messageDiv.innerText = "Server connection error.";
         }
     });
 }

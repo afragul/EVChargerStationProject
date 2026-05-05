@@ -11,7 +11,7 @@ router = APIRouter(prefix="/operators", tags=["Operators"])
 def verify_operator_access(db: Session, user: models.User, station_id: int):
     """Operatörün bu istasyondan sorumlu olup olmadığını kontrol eder (REQ-O05)"""
     if user.role != "operator":
-        raise HTTPException(status_code=403, detail="Erişim reddedildi. Operatör rolü gerekli.")
+        raise HTTPException(status_code=403, detail="Access denied. Operator role required.")
 
     station = db.query(models.Station).filter(
         models.Station.station_id == station_id,
@@ -19,7 +19,7 @@ def verify_operator_access(db: Session, user: models.User, station_id: int):
     ).first()
 
     if not station:
-        raise HTTPException(status_code=403, detail="Bu istasyonu yönetme yetkiniz yok.")
+        raise HTTPException(status_code=403, detail="You do not have the authority to manage this station.")
     return station
 
 
@@ -29,7 +29,7 @@ def get_my_stations(
         current_user: models.User = Depends(get_current_user)
 ):
     if current_user.role != "operator":
-        raise HTTPException(status_code=403, detail="Erişim reddedildi.")
+        raise HTTPException(status_code=403, detail="Access denied.")
     return db.query(models.Station).filter(models.Station.operator_id == current_user.user_id).all()
 
 
@@ -42,7 +42,7 @@ def update_charger_status(
 ):
     charger = db.query(models.Charger).filter(models.Charger.charger_id == charger_id).first()
     if not charger:
-        raise HTTPException(status_code=404, detail="Cihaz bulunamadı.")
+        raise HTTPException(status_code=404, detail="Device not found.")
 
     # Yetki kontrolü
     verify_operator_access(db, current_user, charger.station_id)
@@ -64,7 +64,7 @@ def update_charger_status(
                 driver.wallet_balance += 100.0
 
     db.commit()
-    return {"message": f"Cihaz durumu '{status_data.status}' olarak güncellendi."}
+    return {"message": f"Device status updated to '{status_data.status}'."}
 
 
 # ==========================================
@@ -74,20 +74,20 @@ def update_charger_status(
 def claim_station(station_id: int, db: Session = Depends(get_db),
                   current_user: models.User = Depends(get_current_user)):
     if current_user.role != "operator":
-        raise HTTPException(status_code=403, detail="Sadece operatörler istasyon alabilir.")
+        raise HTTPException(status_code=403, detail="Only operators can acquire stations..")
 
     station = db.query(models.Station).filter(models.Station.station_id == station_id).first()
     if not station:
-        raise HTTPException(status_code=404, detail="İstasyon bulunamadı.")
+        raise HTTPException(status_code=404, detail="Station not found.")
 
     # Eğer istasyon zaten başkasına aitse hata ver
     if station.operator_id is not None and station.operator_id != current_user.user_id:
-        raise HTTPException(status_code=400, detail="Bu istasyon zaten başka bir operatör tarafından yönetiliyor.")
+        raise HTTPException(status_code=400, detail="This station is already managed by another operator..")
 
     # İstasyonu bu operatörün üzerine kaydet
     station.operator_id = current_user.user_id
     db.commit()
-    return {"message": f"{station.name} istasyonu başarıyla yönetiminize alındı."}
+    return {"message": f"{station.name} The station has been successfully taken under your management.."}
 
 
 # ==========================================
@@ -97,7 +97,7 @@ def claim_station(station_id: int, db: Session = Depends(get_db),
 @router.get("/issues", response_model=List[schemas.IssueReportResponse])
 def get_operator_issues(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     if current_user.role != "operator":
-        raise HTTPException(status_code=403, detail="Yetkisiz erişim.")
+        raise HTTPException(status_code=403, detail="unauthorized access.")
 
     # Operatörün sadece kendi istasyonlarındaki cihazlara ait arıza raporlarını getir
     issues = db.query(models.IssueReport).join(models.Charger).join(models.Station).filter(
@@ -110,7 +110,7 @@ def get_operator_issues(db: Session = Depends(get_db), current_user: models.User
 @router.patch("/issues/{issue_id}/resolve")
 def resolve_issue(issue_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     if current_user.role != "operator":
-        raise HTTPException(status_code=403, detail="Yetkisiz erişim.")
+        raise HTTPException(status_code=403, detail="Unauthorized access.")
 
     # Sadece kendi istasyonuna ait bir sorunu mu çözüyor diye kontrol et
     issue = db.query(models.IssueReport).join(models.Charger).join(models.Station).filter(
@@ -119,8 +119,8 @@ def resolve_issue(issue_id: int, db: Session = Depends(get_db), current_user: mo
     ).first()
 
     if not issue:
-        raise HTTPException(status_code=404, detail="Arıza kaydı bulunamadı veya yetkiniz yok.")
+        raise HTTPException(status_code=404, detail="No fault report was found, or you do not have the necessary authorization.")
 
     issue.status = "resolved"
     db.commit()
-    return {"message": "Arıza başarıyla çözüldü olarak işaretlendi."}
+    return {"message": "The problem has been marked as successfully resolved."}

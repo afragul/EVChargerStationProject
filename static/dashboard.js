@@ -67,7 +67,7 @@ async function initDashboard() {
             const welcomeTag = document.getElementById("welcomeMessage");
             if(welcomeTag) welcomeTag.innerText = `Welcome, ${user.name} (${user.role.toUpperCase()})`;
         }
-    } catch (error) { console.error("Kullanıcı bilgisi çekilemedi:", error); }
+    } catch (error) { console.error("User information could not be retrieved.:", error); }
 
     // 2. Sadece rolü 'driver' olanlar için araç ve favorileri çekelim (403 Hatalarını Önler)
     if (currentUserRole === 'driver') {
@@ -120,32 +120,37 @@ async function loadStations() {
 
             // Cihazlar Listesi
             let chargersHtml = "";
-            station.chargers.forEach(c => {
-                const isCompatible = currentUserRole === 'driver' ? userVehicles.some(v => v.connector_type === c.connector_type) : false;
-                if (isCompatible) isStationCompatible = true;
+            // dashboard.js içindeki chargersHtml döngüsü (yaklaşık 120. satır)
+// dashboard.js içindeki chargersHtml döngüsü
+station.chargers.forEach(c => {
+    const isCompatible = currentUserRole === 'driver' ? userVehicles.some(v => v.connector_type === c.connector_type) : false;
+    if (isCompatible) isStationCompatible = true;
 
-                let actionHtml = "";
-                // Sadece Sürücüler "Reserve" butonunu görebilir
-                if (currentUserRole === 'driver') {
-                    if (c.status === "available" && isCompatible) {
-                        actionHtml = `<button onclick="window.openReservationModal(${c.charger_id}, '${c.connector_type}')" style="background:#28a745; color:white; border:none; padding:4px 8px; cursor:pointer; border-radius: 4px; font-size: 11px; font-weight:bold;">Reserve</button>`;
-                    } else if (!isCompatible) {
-                        actionHtml = `<span style="color:#e74c3c; font-size:11px; font-weight:bold;">Incompatible</span>`;
-                    } else {
-                        actionHtml = `<span style="color:#888; font-size:11px; font-weight:bold;">Occupied</span>`;
-                    }
-                } else {
-                    // Operatör sadece durumunu görür
-                    const statColor = c.status === 'available' ? '#2ecc71' : (c.status === 'occupied' ? '#f39c12' : '#e74c3c');
-                    actionHtml = `<span style="color:${statColor}; font-size:11px; font-weight:bold;">${c.status.toUpperCase()}</span>`;
-                }
+    let actionHtml = "";
+    if (currentUserRole === 'driver') {
+        // Rapor Simgesi
+        const reportIcon = `<i class="fas fa-exclamation-triangle" 
+                               onclick="window.openIssueModal('${c.charger_id}')" 
+                               style="color:#f39c12; cursor:pointer; margin-right:12px; font-size:16px; position:relative; z-index:9999;"></i>`;
 
-                chargersHtml += `
-                    <div style="display:flex; justify-content:space-between; margin-bottom:8px; align-items:center; border-bottom:1px solid #eee; padding-bottom:4px; color: #2c3e50 !important;">
-                        <span style="font-size:12px;">${c.power_kW}kW <b>${c.connector_type}</b></span> 
-                        ${actionHtml}
-                    </div>`;
-            });
+        if (c.status === "available" && isCompatible) {
+            actionHtml = `<div style="display:flex; align-items:center;">${reportIcon}<button onclick="window.openReservationModal(${c.charger_id}, '${c.connector_type}')" style="background:#28a745; color:white; border:none; padding:4px 8px; cursor:pointer; border-radius: 4px; font-size: 11px; font-weight:bold;">Reserve</button></div>`;
+        } else if (!isCompatible) {
+            actionHtml = `<div style="display:flex; align-items:center;">${reportIcon}<span style="color:#e74c3c; font-size:11px; font-weight:bold;">Incompatible</span></div>`;
+        } else {
+            actionHtml = `<div style="display:flex; align-items:center;">${reportIcon}<span style="color:#888; font-size:11px; font-weight:bold;">Occupied</span></div>`;
+        }
+    } else {
+        const statColor = c.status === 'available' ? '#2ecc71' : (c.status === 'occupied' ? '#f39c12' : '#e74c3c');
+        actionHtml = `<span style="color:${statColor}; font-size:11px; font-weight:bold;">${c.status.toUpperCase()}</span>`;
+    }
+
+    chargersHtml += `
+        <div style="display:flex; justify-content:space-between; margin-bottom:8px; align-items:center; border-bottom:1px solid #eee; padding-bottom:4px; color: #2c3e50 !important;">
+            <span style="font-size:12px;">${c.power_kW}kW <b>${c.connector_type}</b></span> 
+            ${actionHtml}
+        </div>`;
+});
 
             // Alt Kısım Butonları (Rol'e Göre Değişir)
             let actionSectionHtml = "";

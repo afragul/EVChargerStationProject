@@ -16,14 +16,14 @@ def start_charging(
         current_user: models.User = Depends(get_current_user)
 ):
     if current_user.role != "driver":
-        raise HTTPException(status_code=403, detail="Sadece sürücüler şarj başlatabilir.")
+        raise HTTPException(status_code=403, detail="Only drivers can initiate charging.")
 
     reservation = db.query(models.Reservation).filter(models.Reservation.reservation_id == reservation_id).first()
     if not reservation or reservation.driver_id != current_user.user_id:
-        raise HTTPException(status_code=404, detail="Geçerli bir rezervasyon bulunamadı.")
+        raise HTTPException(status_code=404, detail="No valid reservation was found.")
 
     if reservation.status != "active":
-        raise HTTPException(status_code=400, detail="Bu rezervasyon aktif değil.")
+        raise HTTPException(status_code=400, detail="This reservation is inactive.")
 
     # Oturum oluştur
     new_session = models.ChargingSession(
@@ -51,7 +51,7 @@ def stop_charging(
 ):
     session = db.query(models.ChargingSession).filter(models.ChargingSession.charging_session_id == session_id).first()
     if not session:
-        raise HTTPException(status_code=404, detail="Şarj oturumu bulunamadı.")
+        raise HTTPException(status_code=404, detail="Charging session not found.")
 
     reservation = db.query(models.Reservation).filter(
         models.Reservation.reservation_id == session.reservation_id).first()

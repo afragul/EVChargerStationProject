@@ -2,6 +2,7 @@ from database import SessionLocal
 from models import Station, Charger
 
 
+
 def seed_stations():
     db = SessionLocal()
 

@@ -101,7 +101,7 @@
             </div>
 
             <!-- ============================== -->
-            <!-- 👑 ADMIN (SİSTEM YÖNETİCİSİ) GÖRÜNÜMÜ 👑 -->
+            <!-- ADMIN (SİSTEM YÖNETİCİSİ) GÖRÜNÜMÜ -->
             <!-- ============================== -->
             <div id="adminView" style="display: none;">
                 <div class="vehicle-section" style="margin-top: 25px;">
@@ -124,8 +124,21 @@
                 <div class="input-group"><label>Model</label><input type="text" id="vModel" required></div>
                 <div class="input-group"><label>Plate</label><input type="text" id="vPlate" required></div>
                 <div class="info-row">
-                    <div class="input-group"><label>Battery (kWh)</label><input type="number" id="vBattery" required></div>
-                    <div class="input-group"><label>Connector</label><select id="vConnector"><option value="Type 2">Type 2</option><option value="CCS">CCS</option></select></div>
+                    <div class="input-group">
+    <label>Battery (kWh)</label>
+    <select id="vBattery">
+        <option value="22" style="background: #1a2922; color: white;">22 kWh</option>
+        <option value="50" style="background: #1a2922; color: white;">50 kWh</option>
+        <option value="150" style="background: #1a2922; color: white;">150 kWh</option>
+    </select>
+</div><div class="input-group">
+    <label>Connector</label>
+    <select id="vConnector">
+        <option value="Type 2" style="background: #1a2922; color: white;">Type 2</option>
+        <option value="CCS" style="background: #1a2922; color: white;">CCS</option>
+        <option value="CHAdeMO" style="background: #1a2922; color: white;">CHAdeMO</option>
+    </select>
+</div>
                 </div>
                 <button type="submit" class="btn-action btn-apply">Save Vehicle</button>
             </form>

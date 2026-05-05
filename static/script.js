@@ -104,7 +104,7 @@ window.loadProfile = async function() {
 
 
 // ==========================================
-// 👑 ADMIN (SİSTEM YÖNETİCİSİ) FONKSİYONLARI 👑
+// ADMIN (SİSTEM YÖNETİCİSİ) FONKSİYONLARI
 // ==========================================
 async function loadAdminData(token) {
     try {
@@ -371,18 +371,80 @@ function renderHistoryRes(r, stations) {
 }
 
 function startLiveDashboard(resId) {
-    let startTime = localStorage.getItem('chargeStart_' + resId) || Date.now();
+    const token = localStorage.getItem("token");
+    let endTimeObj = null;
+
+    // Rezervasyon bilgilerini çek (Bitiş saatini garantiye alalım)
+    fetch("/reservations/me", { headers: { "Authorization": `Bearer ${token}` } })
+        .then(res => res.json())
+        .then(reservations => {
+            const currentRes = reservations.find(r => r.reservation_id == resId);
+            if (currentRes) {
+                // Saat bilgisini parçalayıp bugünün tarihine set ediyoruz (Format: HH:mm:ss)
+                const [h, m, s] = currentRes.end_time.split(':');
+                endTimeObj = new Date();
+                endTimeObj.setHours(parseInt(h), parseInt(m), parseInt(s), 0);
+            }
+        });
+
+    let startTime = parseInt(localStorage.getItem('chargeStart_' + resId)) || Date.now();
     localStorage.setItem('chargeStart_' + resId, startTime);
+
     if(window.chargeInterval) clearInterval(window.chargeInterval);
 
+    // Başlangıç bakiyesini DOM'dan al
+    const balanceElement = document.getElementById("walletBalance");
+    let initialBalance = parseFloat(balanceElement?.innerText || 0);
+    const pricePerKwh = 7.5;
+
     window.chargeInterval = setInterval(() => {
-        let diff = Math.floor((Date.now() - startTime) / 1000);
-        let kwh = (22 * (diff / 60) * 0.8).toFixed(2);
-        document.getElementById('liveTime').innerText = `00:${diff < 10 ? '0'+diff : diff}`;
-        document.getElementById('liveKwh').innerHTML = `${kwh}`;
-        document.getElementById('liveCost').innerHTML = `${(kwh * 7.5).toFixed(2)}`;
+        let now = new Date();
+        let elapsedSeconds = Math.floor((now.getTime() - startTime) / 1000);
+
+        // kwh hesaplama (22kW şarj hızı varsayımıyla saniyelik tüketim)
+        let kwh = (22 * (elapsedSeconds / 3600) * 0.8);
+        let currentCost = parseFloat((kwh * pricePerKwh).toFixed(2));
+
+        // Arayüzü güncelle
+        document.getElementById('liveTime').innerText = formatTime(elapsedSeconds);
+        document.getElementById('liveKwh').innerText = kwh.toFixed(4);
+        document.getElementById('liveCost').innerText = currentCost.toFixed(2);
+
+        // --- GÜNCELLEME: BAKİYEYİ EŞ ZAMANLI DÜŞÜR ---
+        let updatedBalance = (initialBalance - currentCost).toFixed(2);
+        if (balanceElement) {
+            balanceElement.innerText = updatedBalance;
+        }
+
+        // --- KONTROL 1: BAKİYE BİTTİ Mİ? ---
+        if (updatedBalance <= 0) {
+            stopChargingWithReason(resId, "Charging stopped because the balance was depleted.");
+        }
+
+        // --- KONTROL 2: SÜRE DOLDU MU? ---
+        // Sadece endTimeObj başarıyla oluşturulduysa kontrol et
+        if (endTimeObj && now >= endTimeObj) {
+            stopChargingWithReason(resId, "Charging has stopped because your reservation period has expired.");
+        }
+
     }, 1000);
-    document.getElementById('liveStopBtn').onclick = () => stopCharging(resId);
+}
+
+function stopChargingWithReason(resId, reason) {
+    clearInterval(window.chargeInterval);
+    // Bakiyeyi sıfıra sabitle (eksi görünmesin)
+    const balanceElement = document.getElementById("walletBalance");
+    if(balanceElement && parseFloat(balanceElement.innerText) < 0) balanceElement.innerText = "0.00";
+
+    window.showCustomAlert(reason, "System Stopped.", () => {
+        stopCharging(resId);
+    });
+}
+
+function formatTime(seconds) {
+    let m = Math.floor(seconds / 60);
+    let s = seconds % 60;
+    return `${m < 10 ? '0'+m : m}:${s < 10 ? '0'+s : s}`;
 }
 
 window.startCharging = async function(reservationId) {
@@ -417,9 +479,30 @@ window.confirmCancelReservation = (id) => window.showCustomConfirm("Cancel booki
     } catch (e) { console.error(e); }
 });
 
+// script.js içindeki openIssueModal
 window.openIssueModal = function(chargerId) {
     window.currentIssueChargerId = chargerId;
-    document.body.insertAdjacentHTML('beforeend', `<div id="issueModal" style="position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.8); z-index:10000; display:flex; justify-content:center; align-items:center;"><div style="background:#1a2922; border:1px solid #f39c12; padding:30px; border-radius:15px; width:320px;"><h3 style="color:#f39c12; margin-top:0;">🚨 Report Issue</h3><select id="issueType" style="width:100%; padding:10px; margin-bottom:15px; border-radius:8px; border:none; background:#2c3e50; color:white;"><option value="Hardware Failure">Hardware Failure</option><option value="Software Issue">Software Issue</option><option value="Cable Damage">Cable Damage</option><option value="Other">Other</option></select><textarea id="issueDesc" placeholder="Details..." style="width:100%; height:60px; padding:10px; margin-bottom:20px; border-radius:8px; border:none; background:#2c3e50; color:white; resize:none;"></textarea><div style="display:flex; gap:15px;"><button onclick="closeIssueModal()" style="flex:1; padding:12px; background:rgba(255,255,255,0.1); border-radius:8px; color:white; cursor:pointer;">Cancel</button><button onclick="submitIssueReport()" style="flex:1; padding:12px; background:#f39c12; border:none; border-radius:8px; color:white; cursor:pointer; font-weight:bold;">Submit</button></div></div></div>`);
+    const oldModal = document.getElementById('issueModal');
+    if(oldModal) oldModal.remove();
+
+    document.body.insertAdjacentHTML('beforeend', `
+        <div id="issueModal" style="position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.85); z-index:100000; display:flex; justify-content:center; align-items:center;">
+            <div style="background:#1a2922; border:1px solid #f39c12; padding:30px; border-radius:15px; width:320px;">
+                <h3 style="color:#f39c12; margin-top:0;">🚨 Report Issue</h3>
+                <p style="color:#aaa; font-size:12px;">Reporting for Charger #${chargerId}</p>
+                <select id="issueType" style="width:100%; padding:10px; margin-bottom:15px; border-radius:8px; background:#2c3e50; color:white; border:none;">
+                    <option value="Hardware Failure">Hardware Failure</option>
+                    <option value="Cable Damage">Cable Damage</option>
+                    <option value="Software Issue">Software Issue</option>
+                </select>
+                <textarea id="issueDesc" placeholder="Details..." style="width:100%; height:60px; padding:10px; margin-bottom:20px; border-radius:8px; background:#2c3e50; color:white; border:none; resize:none;"></textarea>
+                <div style="display:flex; gap:15px;">
+                    <button onclick="window.closeIssueModal()" style="flex:1; padding:12px; background:rgba(255,255,255,0.1); border-radius:8px; color:white; cursor:pointer; border:none;">Cancel</button>
+                    <button onclick="window.submitIssueReport()" style="flex:1; padding:12px; background:#f39c12; border:none; border-radius:8px; color:white; cursor:pointer; font-weight:bold;">Submit</button>
+                </div>
+            </div>
+        </div>
+    `);
 };
 
 window.closeIssueModal = () => { const m = document.getElementById('issueModal'); if(m) m.remove(); };
@@ -452,8 +535,46 @@ window.removeFav = async (id) => {
 
 function renderVehicles(vs) {
     const el = document.getElementById("vehicleList");
-    el.innerHTML = vs.length > 0 ? vs.map(v => `<div class="vehicle-item"><strong>${v.brand}</strong><p>${v.plate_number}</p></div>`).join('') : '<p>No vehicles.</p>';
+    if (vs.length > 0) {
+        el.innerHTML = vs.map(v => `
+            <div class="vehicle-item" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 8px;">
+                <div>
+                    <strong style="color: #3498db;">${v.brand} ${v.model}</strong>
+                    <p style="margin: 0; font-size: 12px; color: #aaa;">${v.plate_number} | ${v.connector_type}</p>
+                </div>
+                <button onclick="window.deleteVehicle('${v.vehicle_id}')" 
+                        style="background: none; border: 1px solid #e74c3c; color: #e74c3c; padding: 5px 10px; border-radius: 5px; cursor: pointer; font-size: 11px; transition: 0.3s;"
+                        onmouseover="this.style.background='#e74c3c'; this.style.color='white';"
+                        onmouseout="this.style.background='none'; this.style.color='#e74c3c';">
+                    <i class="fas fa-trash"></i> Sil
+                </button>
+            </div>
+        `).join('');
+    } else {
+        el.innerHTML = '<p style="color: #666; text-align: center;">Henüz bir araç eklenmemiş.</p>';
+    }
 }
+window.deleteVehicle = async function(vehicleId) {
+    window.showCustomConfirm("Are you sure you want to delete this tool?", "Delete Vehicle", async () => {
+        const token = localStorage.getItem("token");
+        try {
+            const res = await fetch(`/vehicles/${vehicleId}`, {
+                method: "DELETE",
+                headers: { "Authorization": `Bearer ${token}` }
+            });
+
+            if (res.ok) {
+                addNotification("The vehicle has been successfully deleted.");
+                window.loadProfile(); // Listeyi güncellemek için profili tekrar yükle
+            } else {
+                const err = await res.json();
+                window.showCustomAlert(err.detail || "An error occurred while deleting the vehicle.", "Error");
+            }
+        } catch (error) {
+            console.error("Vehicle deletion error:", error);
+        }
+    });
+};
 
 // ==========================================
 // ORTAK MODALLAR VE YARDIMCI İŞLEMLER
@@ -466,12 +587,62 @@ window.openTopUpModal = () => document.getElementById("topUpModal").style.displa
 window.closeTopUpModal = () => document.getElementById("topUpModal").style.display = "none";
 window.submitTopUp = async () => {
     const amount = parseFloat(document.getElementById("topUpAmount").value);
+    const token = localStorage.getItem("token");
+
     try {
-        const res = await fetch("/payments/topup", { method: "POST", headers: { "Authorization": `Bearer ${localStorage.getItem("token")}`, "Content-Type": "application/json" }, body: JSON.stringify({ amount, type: "TopUp", driver_id: window.currentUserId }) });
+        const res = await fetch("/payments/topup", {
+            method: "POST",
+            headers: {
+                "Authorization": `Bearer ${token}`,
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                amount: amount,
+                type: "TopUp",
+                driver_id: window.currentUserId
+            })
+        });
         if (res.ok) window.location.reload();
     } catch(e) { console.error(e); }
 };
 window.toggleVehicleView = (s) => { document.getElementById("profileView").style.display = s ? "none" : "block"; document.getElementById("addView").style.display = s ? "block" : "none"; };
 window.handleLogout = () => { localStorage.removeItem("token"); window.location.href = "/login"; };
-document.addEventListener("DOMContentLoaded", window.loadProfile);
+
+// Araç Kaydetme Formu Dinleyicisi
+document.getElementById("vehicleForm")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const token = localStorage.getItem("token");
+
+    const vehicleData = {
+        brand: document.getElementById("vBrand").value,
+        model: document.getElementById("vModel").value,
+        plate_number: document.getElementById("vPlate").value,
+        battery_kWh: parseFloat(document.getElementById("vBattery").value),
+        connector_type: document.getElementById("vConnector").value,
+        owner_id: window.currentUserId
+    };
+
+    try {
+        const res = await fetch("/vehicles/", { // Backend rotana göre sonundaki /'a dikkat et
+            method: "POST",
+            headers: {
+                "Authorization": `Bearer ${token}`,
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify(vehicleData)
+        });
+
+        if (res.ok) {
+            window.showCustomAlert("Vehicle added successfully!", "Success", () => {
+                window.toggleVehicleView(false); // Profil ekranına dön
+                window.loadProfile();           // Verileri (ve listeyi) yeniden yükle
+            });
+        } else {
+            const err = await res.json();
+            window.showCustomAlert(err.detail || "Error adding vehicle", "Error");
+        }
+    } catch (error) {
+        console.error("Vehicle add error:", error);
+    }
+});document.addEventListener("DOMContentLoaded", window.loadProfile);
 document.head.insertAdjacentHTML("beforeend", `<style>@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } } button { cursor: pointer; }</style>`);

@@ -21,7 +21,7 @@ def create_reservation(
         current_user: models.User = Depends(get_current_user)
 ):
     if current_user.role != "driver":
-        raise HTTPException(status_code=403, detail="Sadece sürücüler rezervasyon yapabilir.")
+        raise HTTPException(status_code=403, detail="Only drivers can make reservations.")
 
     driver = db.query(models.Driver).filter(models.Driver.driver_id == current_user.user_id).first()
 
@@ -30,19 +30,19 @@ def create_reservation(
         models.Vehicle.owner_id == driver.driver_id
     ).first()
     if not vehicle:
-        raise HTTPException(status_code=404, detail="Araç bulunamadı veya size ait değil")
+        raise HTTPException(status_code=404, detail="The vehicle was not found or it does not belong to you.")
 
     charger = db.query(models.Charger).filter(models.Charger.charger_id == req.charger_id).first()
     if not charger:
-        raise HTTPException(status_code=404, detail="Şarj cihazı bulunamadı.")
+        raise HTTPException(status_code=404, detail="Charger not found.")
 
     if charger.status.value == "offline":
-        raise HTTPException(status_code=400, detail="Seçili cihaz şu anda arızalı / hizmet dışıdır.")
+        raise HTTPException(status_code=400, detail="The selected device is currently faulty/out of service.")
 
     if vehicle.connector_type != charger.connector_type:
         raise HTTPException(
             status_code=400,
-            detail=f"Uyumsuz Soket! Aracınız {vehicle.connector_type}, ancak cihaz {charger.connector_type} destekliyor."
+            detail=f"Incompatible socket! Your vehicle supports {vehicle.connector_type}, but your device supports {charger.connector_type}."
         )
 
     overlapping_reservation = db.query(models.Reservation).filter(
@@ -55,7 +55,7 @@ def create_reservation(
 
     if overlapping_reservation:
         raise HTTPException(status_code=400,
-                            detail="Seçilen tarih ve saat dilimi, bu cihazdaki başka bir rezervasyon ile çakışıyor.")
+                            detail="The selected date and time zone conflict with another reservation on this device.")
 
     existing_user_reservation = db.query(models.Reservation).filter(
         models.Reservation.driver_id == driver.driver_id,
@@ -65,11 +65,11 @@ def create_reservation(
 
     if existing_user_reservation:
         raise HTTPException(status_code=400,
-                            detail="Bu tarih için zaten aktif bir rezervasyonunuz var. Yenisini yapmadan önce onu tamamlamalı veya iptal etmelisiniz.")
+                            detail="You already have an active reservation for this date. You must complete or cancel it before making a new one.")
 
     if driver.wallet_balance < DEFAULT_PROVISION_AMOUNT:
         raise HTTPException(status_code=402,
-                            detail=f"Yetersiz bakiye. Rezervasyon için {DEFAULT_PROVISION_AMOUNT} TL gereklidir.")
+                            detail=f"Insufficient balance. {DEFAULT_PROVISION_AMOUNT} TL is required for the reservation.")
 
     driver.wallet_balance -= DEFAULT_PROVISION_AMOUNT
 
@@ -92,7 +92,7 @@ def create_reservation(
 @router.get("/me", response_model=List[schemas.ReservationResponse])
 def get_my_reservations(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     if current_user.role != "driver":
-        raise HTTPException(status_code=403, detail="Sadece sürücüler bu alanı görebilir.")
+        raise HTTPException(status_code=403, detail="Only drivers can see this area.")
     return db.query(models.Reservation).filter(models.Reservation.driver_id == current_user.user_id).all()
 
 
@@ -100,7 +100,7 @@ def get_my_reservations(db: Session = Depends(get_db), current_user: models.User
 def get_all_reservations(charger_id: Optional[int] = None, db: Session = Depends(get_db),
                          current_user: models.User = Depends(get_current_user)):
     if current_user.role not in ["admin", "operator"]:
-        raise HTTPException(status_code=403, detail="Yetkisiz erişim.")
+        raise HTTPException(status_code=403, detail="Unauthorized access.")
     query = db.query(models.Reservation)
     if charger_id:
         query = query.filter(models.Reservation.charger_id == charger_id)
@@ -112,7 +112,7 @@ def get_reservation(reservation_id: int, db: Session = Depends(get_db),
                     current_user: models.User = Depends(get_current_user)):
     reservation = db.query(models.Reservation).filter(models.Reservation.reservation_id == reservation_id).first()
     if not reservation:
-        raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı.")
+        raise HTTPException(status_code=404, detail="Reservation not found.")
     return reservation
 
 
@@ -121,13 +121,13 @@ def delete_reservation(reservation_id: int, db: Session = Depends(get_db),
                        current_user: models.User = Depends(get_current_user)):
     reservation = db.query(models.Reservation).filter(models.Reservation.reservation_id == reservation_id).first()
     if not reservation:
-        raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı.")
+        raise HTTPException(status_code=404, detail="Reservation not found.")
 
     if reservation.driver_id != current_user.user_id:
-        raise HTTPException(status_code=403, detail="Sadece kendi rezervasyonlarınızı iptal edebilirsiniz.")
+        raise HTTPException(status_code=403, detail="You can only cancel your own reservations.")
 
     if reservation.status != "active":
-        raise HTTPException(status_code=400, detail="Sadece 'active' durumdaki rezervasyonlar silinebilir.")
+        raise HTTPException(status_code=400, detail="Only reservations that are in the 'active' status can be deleted.")
 
     driver = db.query(models.Driver).filter(models.Driver.driver_id == current_user.user_id).first()
     if driver:
@@ -135,7 +135,7 @@ def delete_reservation(reservation_id: int, db: Session = Depends(get_db),
 
     db.delete(reservation)
     db.commit()
-    return {"message": "Rezervasyon veritabanından tamamen silindi ve ücret iade edildi."}
+    return {"message": "The reservation has been completely deleted from the database and a refund has been issued."}
 
 
 @router.patch("/{reservation_id}/start")
@@ -143,10 +143,10 @@ def start_charging(reservation_id: int, db: Session = Depends(get_db),
                    current_user: models.User = Depends(get_current_user)):
     reservation = db.query(models.Reservation).filter(models.Reservation.reservation_id == reservation_id).first()
     if not reservation or reservation.driver_id != current_user.user_id:
-        raise HTTPException(status_code=404, detail="Geçerli bir rezervasyon bulunamadı.")
+        raise HTTPException(status_code=404, detail="No valid reservation found.")
 
     if reservation.status != "active":
-        raise HTTPException(status_code=400, detail="Sadece 'active' durumdaki rezervasyonlar başlatılabilir.")
+        raise HTTPException(status_code=400, detail="Only reservations that are in the 'active' status can be initiated.")
 
     reservation.status = "charging"
     # YENİ: Şarjın başlatıldığı tam zamanı kaydediyoruz
@@ -156,7 +156,7 @@ def start_charging(reservation_id: int, db: Session = Depends(get_db),
     if charger:
         charger.status = "occupied"
     db.commit()
-    return {"message": "Şarj işlemi başladı! Enerji aktarılıyor..."}
+    return {"message": "Charging has begun! Power is being transferred..."}
 
 
 @router.patch("/{reservation_id}/complete")
@@ -164,10 +164,10 @@ def complete_charging(reservation_id: int, db: Session = Depends(get_db),
                       current_user: models.User = Depends(get_current_user)):
     reservation = db.query(models.Reservation).filter(models.Reservation.reservation_id == reservation_id).first()
     if not reservation or reservation.driver_id != current_user.user_id:
-        raise HTTPException(status_code=404, detail="Geçerli bir rezervasyon bulunamadı.")
+        raise HTTPException(status_code=404, detail="No valid reservation was found.")
 
     if reservation.status != "charging":
-        raise HTTPException(status_code=400, detail="Sadece 'charging' durumundaki işlemler tamamlanabilir.")
+        raise HTTPException(status_code=400, detail="Only operations in the 'charging' state can be completed.")
 
     driver = db.query(models.Driver).filter(models.Driver.driver_id == current_user.user_id).first()
     charger = db.query(models.Charger).filter(models.Charger.charger_id == reservation.charger_id).first()
@@ -211,7 +211,7 @@ def complete_charging(reservation_id: int, db: Session = Depends(get_db),
     db.commit()
 
     return {
-        "message": "Şarj tamamlandı.",
+        "message": "Charging is completed.",
         "kwh": simulated_kwh,
         "cost": total_cost,
         "duration": simulated_duration_min
