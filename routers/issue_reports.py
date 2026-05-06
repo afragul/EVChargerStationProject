@@ -36,7 +36,27 @@ def create_issue_report(report_in: schemas.IssueReportCreate, db: Session = Depe
     for res in active_reservations:
         crud.cancel_reservation(db, res.reservation_id)
         # Not: İptal edilen rezervasyonlar için Refund (iade) payment kaydı da buraya eklenebilir.
+        for res in active_reservations:
+            # Rezervasyonu iptal et
+            crud.cancel_reservation(db, res.reservation_id)
 
+            # --- REQUIREMENT BURADA SAĞLANIYOR ---
+            # A) Sürücüye provizyon ücretini iade et
+            driver = db.query(models.Driver).filter(models.Driver.driver_id == res.driver_id).first()
+            if driver:
+                driver.wallet_balance += 100.0
+
+            # B) İlgili Kullanıcıyı Bilgilendir (Notification)
+            new_notif = models.Notification(
+                user_id=res.driver_id,
+                message=f"🚨 Charger #{report_in.charger_id} has been reported broken. Your reservation on {res.date} is automatically cancelled and 100 TL has been refunded.",
+                created_at=datetime.utcnow()
+            )
+            db.add(new_notif)
+
+            # Bildirimlerin ve cüzdan iadesinin veritabanına yansıması için kaydet
+        if active_reservations:
+            db.commit()
     return report
 
 
