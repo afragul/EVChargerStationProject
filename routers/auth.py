@@ -88,5 +88,13 @@ def login(form_data: Annotated[OAuth2PasswordRequestForm, Depends()], db: db_dep
     if not user:
         raise HTTPException(status_code=401, detail="Email veya şifre hatalı")
 
+    if user.role == "operator": #operator icin adminin onay vermesi gerekiyor. onay verdiyse girebilir
+        operator = db.query(models.Operator).filter(models.Operator.operator_id == user.user_id).first()
+        if operator and not operator.is_approved:
+            raise HTTPException(
+                status_code=403,
+                detail="Your account is pending admin approval. You cannot log in yet."
+            )
+
     token = create_access_token(user.user_id, user.role)
     return {"access_token": token, "token_type": "bearer"}

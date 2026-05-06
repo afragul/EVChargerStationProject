@@ -4,6 +4,7 @@ from datetime import date as Date, time as Time, datetime as DateTime
 from enum import Enum
 
 
+
 class ChargerStatus(str, Enum):
     available = "available"
     occupied = "occupied"
@@ -163,6 +164,7 @@ class StationCreate(StationBase):
 class StationResponse(StationBase):
     station_id: int
     operator_id: Optional[int] = None
+    requested_operator_id: Optional[int] = None
     chargers: List[ChargerResponse] = []
 
     class Config:

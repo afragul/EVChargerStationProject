@@ -49,9 +49,17 @@ if (registerForm) {
             const result = await response.json();
 
             if (response.ok) {
-                messageDiv.style.color = "#28a745";
-                messageDiv.innerText = "Account created successfully! You are being redirected to login...";
-                setTimeout(() => window.location.href = "/login", 2000);
+                if (roleValue === "operator") {
+                    // Operatörse yönlendirme yapma, ekranda bilgi ver
+                    messageDiv.style.color = "#f39c12";
+                    messageDiv.innerText = "Application received! You will be able to log in after admin approval.";
+                    registerForm.reset(); // Formu temizle
+                } else {
+                    // Sürücüyse doğrudan login'e
+                    messageDiv.style.color = "#28a745";
+                    messageDiv.innerText = "Account created successfully! You are being redirected to login...";
+                    setTimeout(() => window.location.href = "/login", 2000);
+                }
             } else {
                 messageDiv.style.color = "#ff6b6b";
                 messageDiv.innerText = result.detail || "Registration failed.";

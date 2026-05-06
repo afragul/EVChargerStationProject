@@ -106,3 +106,16 @@ def get_my_driver_profile(token: token_dependency, db: db_dependency):
 
     return driver
 
+
+# routers/users.py dosyasının en altına ekle:
+
+@router.get("/me/notifications")
+def get_my_notifications(token: token_dependency, db: db_dependency):
+    current_user = get_current_user(db, token)
+
+    # Kullanıcının en son 10 bildirimini çek
+    notifs = db.query(models.Notification).filter(
+        models.Notification.user_id == current_user.user_id
+    ).order_by(models.Notification.created_at.desc()).limit(10).all()
+
+    return [{"id": n.notification_id, "message": n.message, "time": n.created_at.strftime("%H:%M")} for n in notifs]

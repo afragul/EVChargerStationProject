@@ -4,6 +4,7 @@ from typing import List
 import models, schemas
 from database import get_db
 from routers.auth import get_current_user
+from datetime import datetime, date
 
 router = APIRouter(prefix="/operators", tags=["Operators"])
 
@@ -63,6 +64,13 @@ def update_charger_status(
             if driver:
                 driver.wallet_balance += 100.0
 
+            new_notif = models.Notification(
+                user_id=res.driver_id,
+                message=f" Charger #{charger_id} went offline. Your reservation on {res.date} is cancelled and 100 TL is refunded.",
+                created_at=datetime.utcnow()
+            )
+            db.add(new_notif)
+
     db.commit()
     return {"message": f"Device status updated to '{status_data.status}'."}
 
@@ -84,11 +92,13 @@ def claim_station(station_id: int, db: Session = Depends(get_db),
     if station.operator_id is not None and station.operator_id != current_user.user_id:
         raise HTTPException(status_code=400, detail="This station is already managed by another operator..")
 
-    # İstasyonu bu operatörün üzerine kaydet
-    station.operator_id = current_user.user_id
-    db.commit()
-    return {"message": f"{station.name} The station has been successfully taken under your management.."}
+    if station.requested_operator_id is not None:
+        raise HTTPException(status_code=400, detail="This station has a pending claim from someone else.")
 
+    # İstasyonu talep et
+    station.requested_operator_id = current_user.user_id
+    db.commit()
+    return {"message": "Claim request sent to admin for approval."}
 
 # ==========================================
 # Arıza Bildirimi Yönetimi

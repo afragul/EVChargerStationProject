@@ -2,9 +2,9 @@ window.alertCallback = null;
 window.confirmCallback = null;
 window.chargeInterval = null;
 
-// ==========================================
+
 // BİLDİRİM SİSTEMİ FONKSİYONLARI
-// ==========================================
+
 function getNotifKey() { return 'ev_notifs_' + (window.currentUserId || 'guest'); }
 
 function addNotification(message) {
@@ -17,24 +17,45 @@ function addNotification(message) {
     renderNotifs();
 }
 
-function renderNotifs() {
-    let key = getNotifKey();
-    let notifs = JSON.parse(localStorage.getItem(key) || '[]');
-    let list = document.getElementById('notifList');
-    let badge = document.getElementById('notifBadge');
+async function renderNotifs() {
+    const token = localStorage.getItem("token");
+    if (!token) return;
 
-    if(notifs.length > 0) {
-        badge.style.display = 'block';
-        badge.innerText = notifs.length;
-        list.innerHTML = notifs.map(n => `
-            <div style="padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.1);">
-                <div style="color: #2ecc71; font-weight: bold; margin-bottom: 3px;">${n.time}</div>
-                <div>${n.text}</div>
-            </div>`).join('');
-    } else {
-        badge.style.display = 'none';
-        list.innerHTML = '<p style="color:#666; text-align:center;">No new notifications.</p>';
-    }
+    try {
+        const res = await fetch("/users/me/notifications", { headers: { "Authorization": `Bearer ${token}` } });
+        if (res.ok) {
+            const notifs = await res.json();
+            let list = document.getElementById('notifList');
+            let badge = document.getElementById('notifBadge');
+
+            if(notifs.length > 0) {
+                badge.style.display = 'block';
+                badge.innerText = notifs.length;
+                list.innerHTML = notifs.map(n => `
+                    <div style="padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.1);">
+                        <div style="color: #2ecc71; font-weight: bold; margin-bottom: 3px;">${n.time}</div>
+                        <div>${n.message}</div>
+                    </div>`).join('');
+            } else {
+                badge.style.display = 'none';
+                list.innerHTML = '<p style="color:#666; text-align:center;">No new notifications.</p>';
+            }
+        }
+    } catch (e) { console.error("Notification load error", e); }
+}
+// Lokal bildirim ekleyici. db ye gitmeden bildirim gitmez
+function addNotification(message) {
+    let time = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+    let list = document.getElementById('notifList');
+    list.innerHTML = `
+        <div style="padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.1);">
+            <div style="color: #f1c40f; font-weight: bold; margin-bottom: 3px;">${time} (Local)</div>
+            <div>${message}</div>
+        </div>` + list.innerHTML;
+
+    let badge = document.getElementById('notifBadge');
+    badge.style.display = 'block';
+    badge.innerText = parseInt(badge.innerText || 0) + 1;
 }
 
 window.toggleNotifs = () => {
@@ -43,9 +64,9 @@ window.toggleNotifs = () => {
 };
 
 
-// ==========================================
+
 // PROFİL VE VERİ YÜKLEME (ROLE GÖRE AYRIM)
-// ==========================================
+
 window.loadProfile = async function() {
     const token = localStorage.getItem("token");
     if (!token) return;
@@ -103,23 +124,124 @@ window.loadProfile = async function() {
 };
 
 
-// ==========================================
 // ADMIN (SİSTEM YÖNETİCİSİ) FONKSİYONLARI
-// ==========================================
 async function loadAdminData(token) {
     try {
-        const [opRes, stRes] = await Promise.all([
+        const [opRes, stRes, pendingOpRes , claimsRes] = await Promise.all([
             fetch("/admin/operators", { headers: { "Authorization": `Bearer ${token}` } }),
-            fetch("/stations/", { headers: { "Authorization": `Bearer ${token}` } })
+            fetch("/stations/", { headers: { "Authorization": `Bearer ${token}` } }),
+            fetch("/admin/operators/pending", { headers: { "Authorization": `Bearer ${token}` } }),
+            fetch("/admin/station-claims/pending", { headers: { "Authorization": `Bearer ${token}` } })
         ]);
 
         if (opRes.ok && stRes.ok) {
             const operators = await opRes.json();
             const stations = await stRes.json();
             renderAdminStations(stations, operators);
+            if (pendingOpRes.ok) renderPendingOperators(await pendingOpRes.json(), stations);
         }
+        if (claimsRes.ok) renderStationClaims(await claimsRes.json());
+
     } catch (e) { console.error("Admin data error:", e); }
 }
+
+// Onay bekleyen operatörleri HTML'e çevirip basan fonksiyon
+function renderPendingOperators(pendingOps, stations) {
+    const el = document.getElementById("adminPendingOperatorsList");
+    if (!el) return;
+
+    if (pendingOps.length === 0) {
+        el.innerHTML = '<p style="color:#666; text-align:center; width:100%; padding: 10px;">No pending operator registrations.</p>';
+        return;
+    }
+
+    const unassignedStations = stations.filter(s => !s.operator_id && !s.requested_operator_id);
+    let stationOptions = unassignedStations.map(s => `<option value="${s.station_id}">${s.name}</option>`).join('');
+
+    let html = '';
+    pendingOps.forEach(op => {
+        html += `
+        <div style="background:#1a2922; padding:18px; border-radius:12px; margin-bottom:15px; border-left:5px solid #f39c12; display:flex; flex-direction:column; gap:12px; box-shadow: 0 4px 10px rgba(0,0,0,0.3);">
+            <div style="border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 10px;">
+                <strong style="color:#f39c12; font-size:16px;"><i class="fas fa-user-clock"></i> ${op.name}</strong>
+                <p style="font-size:0.9rem; color:#aaa; margin:6px 0 0 0;">📧 ${op.email}</p>
+            </div>
+            
+            <div style="display:flex; flex-direction:column; gap:8px;">
+                <label style="font-size: 11px; color: #888; font-weight: bold; text-transform: uppercase;">1. Assign a Station</label>
+                <select id="first_station_${op.operator_id}" style="width:100%; padding:12px; background:#2c3e50; color:white; border:1px solid #34495e; border-radius:8px; outline:none; font-size:13px; cursor:pointer;">
+                    <option value="">-- Select an available station --</option>
+                    ${stationOptions}
+                </select>
+                
+                <button onclick="approveOperator('${op.operator_id}')" style="width:100%; background:#2ecc71; border:none; color:white; padding:12px; border-radius:8px; font-weight:bold; cursor:pointer; font-size:14px; margin-top:5px; transition:0.3s;">
+                    Approve & Assign
+                </button>
+            </div>
+        </div>`;
+    });
+    el.innerHTML = html;
+}
+// Onay butonuna basılınca çalışacak backend isteği
+window.approveOperator = async function(operatorId) {
+    const token = localStorage.getItem("token");
+    const stationId = document.getElementById(`first_station_${operatorId}`).value;
+
+    if(!stationId) {
+        window.showCustomAlert("You must assign an available station to the operator before approving.", "Station Required");
+        return;
+    }
+
+    window.showCustomConfirm("Approve operator and assign the selected station?", "Approve Operator", async () => {
+        try {
+            const res = await fetch(`/admin/operators/${operatorId}/approve?station_id=${stationId}`, {
+                method: "PATCH",
+                headers: { "Authorization": `Bearer ${token}` }
+            });
+            if (res.ok) window.location.reload();
+        } catch (e) { console.error(e); }
+    });
+};
+
+//operatorlerin istek istasyonda bulunmasi
+function renderStationClaims(claims) {
+    const el = document.getElementById("adminStationClaimsList");
+    if (!el) return;
+
+    if (claims.length === 0) {
+        el.innerHTML = '<p style="color:#666; text-align:center; width:100%; padding: 10px;">No pending station claims.</p>';
+        return;
+    }
+
+    let html = '';
+    claims.forEach(c => {
+        html += `
+        <div style="background:#1a2922; padding:18px; border-radius:12px; margin-bottom:15px; border-left:5px solid #3498db; display:flex; flex-direction:column; gap:12px; box-shadow: 0 4px 10px rgba(0,0,0,0.3);">
+            <div style="border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 10px;">
+                <strong style="color:#3498db; font-size:16px;"><i class="fas fa-map-marker-alt"></i> ${c.station_name}</strong>
+                <p style="font-size:0.9rem; color:#aaa; margin:6px 0 0 0;">Requested by: <b style="color:#fff;">${c.operator_name}</b></p>
+            </div>
+            <button onclick="approveStationClaim('${c.station_id}')" style="width:100%; background:#3498db; border:none; color:white; padding:12px; border-radius:8px; font-weight:bold; cursor:pointer; font-size:14px; transition:0.3s;">
+                Grant Station Access
+            </button>
+        </div>`;
+    });
+    el.innerHTML = html;
+}
+
+window.approveStationClaim = async function(stationId) {
+    const token = localStorage.getItem("token");
+    window.showCustomConfirm("Grant this station to the requesting operator?", "Approve Claim", async () => {
+        try {
+            const res = await fetch(`/admin/stations/${stationId}/approve-claim`, {
+                method: "PATCH",
+                headers: { "Authorization": `Bearer ${token}` }
+            });
+            if (res.ok) window.location.reload();
+        } catch (e) { console.error(e); }
+    });
+};
+
 
 function renderAdminStations(stations, operators) {
     const el = document.getElementById("adminStationsList");
@@ -131,30 +253,45 @@ function renderAdminStations(stations, operators) {
 
     let html = '';
     stations.forEach(s => {
-        let opOptions = `<option value="">-- Unassigned --</option>` +
+        let opOptions = `<option value="">-- Unassigned (Available) --</option>` +
             operators.map(o => `<option value="${o.operator_id}" ${s.operator_id === o.operator_id ? 'selected' : ''}>${o.name}</option>`).join('');
 
         html += `
-        <div style="background:#1a2922; padding:20px; border-radius:10px; margin-bottom:15px; border:1px solid #9b59b6; width:100%;">
-            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:10px; margin-bottom:10px;">
-                <h4 style="color:#9b59b6; margin:0;">📍 ${s.name}</h4>
-                <div style="display:flex; gap:10px;">
-                    <select id="assign_op_${s.station_id}" style="padding:6px; background:#2c3e50; color:white; border:none; border-radius:4px; outline:none;">
+        <div style="background:#1a2922; padding:20px; border-radius:12px; margin-bottom:20px; border:1px solid rgba(155, 89, 182, 0.5); width:100%;">
+            
+            <!-- İstasyon Başlığı ve Atama İşlemi -->
+            <div style="border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:15px; margin-bottom:15px;">
+                <h4 style="color:#9b59b6; margin:0 0 15px 0; font-size:18px;"><i class="fas fa-charging-station"></i> ${s.name}</h4>
+                
+                <div style="display:flex; flex-direction:column; gap:8px;">
+                    <label style="font-size: 11px; color: #888; font-weight:bold; text-transform:uppercase;">Manage Operator:</label>
+                    <select id="assign_op_${s.station_id}" style="width:100%; padding:10px; background:#2c3e50; color:white; border:1px solid #34495e; border-radius:8px; outline:none; font-size:13px;">
                         ${opOptions}
                     </select>
-                    <button onclick="assignOperatorToStation('${s.station_id}')" style="background:#9b59b6; border:none; color:white; padding:6px 12px; border-radius:4px; cursor:pointer; font-weight:bold;">Assign</button>
+                    <button onclick="assignOperatorToStation('${s.station_id}')" style="width:100%; background:#9b59b6; border:none; color:white; padding:10px; border-radius:8px; cursor:pointer; font-weight:bold; font-size:13px; margin-top:4px;">
+                        Update Assignment
+                    </button>
                 </div>
             </div>
-            <div style="display:flex; flex-wrap:wrap; gap:10px;">`;
+
+            <!-- Şarj Cihazları Listesi -->
+            <label style="font-size: 11px; color: #888; font-weight:bold; text-transform:uppercase; margin-bottom:8px; display:block;">Chargers Configuration:</label>
+            <div style="display:flex; flex-direction:column; gap:12px;">`;
 
         s.chargers.forEach(c => {
             html += `
-                <div style="background:#0f1714; padding:10px; border-radius:8px; border-left:4px solid #3498db; width:48%; min-width:150px;">
-                    <strong style="color:white; font-size:13px;">🔌 Charger #${c.charger_id}</strong>
-                    <div style="display:flex; align-items:center; gap:5px; margin-top:8px;">
-                        <span style="font-size:11px; color:#aaa;">₺/kWh:</span>
-                        <input type="number" id="price_${c.charger_id}" value="${c.price_per_kWh}" step="0.5" style="width:60px; padding:4px; background:#2c3e50; color:white; border:none; border-radius:4px; font-size:12px;">
-                        <button onclick="updateChargerPrice('${c.charger_id}')" style="background:#3498db; border:none; color:white; padding:4px 8px; border-radius:4px; cursor:pointer; font-size:11px;">Update</button>
+                <div style="background:rgba(0,0,0,0.3); padding:15px; border-radius:10px; border-left:4px solid #3498db; width:100%;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <strong style="color:white; font-size:14px;">🔌 Charger #${c.charger_id}</strong>
+                        <span style="font-size:11px; color:#bdc3c7; background:rgba(255,255,255,0.1); padding:4px 8px; border-radius:4px;">${c.power_kW}kW ${c.connector_type}</span>
+                    </div>
+                    
+                    <div style="display:flex; align-items:center; justify-content:space-between; margin-top:12px;">
+                        <span style="font-size:12px; color:#aaa; font-weight:bold;">₺/kWh:</span>
+                        <div style="display:flex; gap:8px;">
+                            <input type="number" id="price_${c.charger_id}" value="${c.price_per_kWh}" step="0.5" style="width:70px; text-align:center; padding:6px; background:#2c3e50; color:white; border:1px solid #34495e; border-radius:6px; font-size:13px; outline:none;">
+                            <button onclick="updateChargerPrice('${c.charger_id}')" style="background:#3498db; border:none; color:white; padding:6px 12px; border-radius:6px; cursor:pointer; font-size:12px; font-weight:bold;">Save</button>
+                        </div>
                     </div>
                 </div>
             `;

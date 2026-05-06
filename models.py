@@ -3,6 +3,7 @@ from sqlalchemy.orm import relationship
 import enum
 from database import Base
 from datetime import datetime
+from sqlalchemy import Boolean
 
 
 class ChargerStatus(str, enum.Enum):
@@ -57,9 +58,9 @@ class Driver(Base):
 class Operator(Base):
     __tablename__ = "operators"
     operator_id = Column(Integer, ForeignKey("users.user_id"), primary_key=True)
-
+    is_approved = Column(Boolean, default=False)  # adminden onay bekliyor
     user = relationship("User", back_populates="operator_profile")
-    managed_stations = relationship("Station", back_populates="manager")
+    managed_stations = relationship("Station", back_populates="manager", foreign_keys="[Station.operator_id]")
 
 
 class Admin(Base):
@@ -79,7 +80,8 @@ class Station(Base):
     operating_hours = Column(String)
 
     operator_id = Column(Integer, ForeignKey("operators.operator_id"), nullable=True)
-    manager = relationship("Operator", back_populates="managed_stations")
+    requested_operator_id = Column(Integer, ForeignKey("operators.operator_id"), nullable=True)
+    manager = relationship("Operator", back_populates="managed_stations", foreign_keys=[operator_id])
     chargers = relationship("Charger", back_populates="station")
 
     favorited_by = relationship(
@@ -185,3 +187,14 @@ class ChargingSession(Base):
     duration_min = Column(Integer)
 
     reservation = relationship("Reservation", back_populates="charging_session")
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+    notification_id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.user_id"))
+    message = Column(String)
+    is_read = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User")

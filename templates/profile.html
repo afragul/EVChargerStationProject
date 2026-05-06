@@ -100,13 +100,29 @@
                 </div>
             </div>
 
-            <!-- ============================== -->
-            <!-- ADMIN (SİSTEM YÖNETİCİSİ) GÖRÜNÜMÜ -->
-            <!-- ============================== -->
+            <!-- admin gorunumu -->
+
             <div id="adminView" style="display: none;">
+
+                <!-- ONAY BEKLEYEN YENİ OPERATÖRLER -->
                 <div class="vehicle-section" style="margin-top: 25px;">
                     <div class="section-header">
-                        <h3>⚙️ Station Management & Assignments</h3>
+                        <h3>🏢 Pending Operator Approvals</h3>
+                    </div>
+                    <div id="adminPendingOperatorsList" class="vehicle-grid"></div>
+                </div>
+
+                <div class="vehicle-section" style="margin-top: 25px;">
+                    <div class="section-header">
+                        <h3> Pending Station Claims</h3>
+                    </div>
+                    <div id="adminStationClaimsList" class="vehicle-grid"></div>
+                 </div>
+
+
+                <div class="vehicle-section" style="margin-top: 25px;">
+                    <div class="section-header">
+                        <h3> Station Management & Assignments</h3>
                     </div>
                     <div id="adminStationsList" class="vehicle-grid"></div>
                 </div>

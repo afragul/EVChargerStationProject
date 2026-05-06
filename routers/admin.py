@@ -68,9 +68,7 @@ def set_charger_price(
     return {"message": f"Cihazın yeni kWh fiyatı {price_per_kwh} TL olarak güncellendi."}
 
 
-# ==========================================
-# YENİ EKLENEN: Operatörleri Listeleme (Arayüz İçin)
-# ==========================================
+#opearot listele
 @router.get("/operators")
 def get_all_operators(
         db: Session = Depends(get_db),
@@ -80,7 +78,7 @@ def get_all_operators(
 
     # Operator tablosu ile User tablosunu eşleştirip (join) isimleri ve email'leri alıyoruz
     operators = db.query(models.Operator, models.User).join(
-        models.User, models.Operator.user_id == models.User.user_id
+        models.User, models.Operator.operator_id == models.User.user_id
     ).all()
 
     result = []
@@ -91,3 +89,73 @@ def get_all_operators(
             "email": user.email
         })
     return result
+
+
+
+#operator onaylama
+@router.get("/operators/pending")
+def get_pending_operators(
+        db: Session = Depends(get_db),
+        current_user: models.User = Depends(get_current_user)
+):
+    require_admin(current_user)
+
+    # Onay bekleyen (is_approved == False) operatörleri listele
+    pending_ops = db.query(models.Operator, models.User).join(
+        models.User, models.Operator.operator_id == models.User.user_id
+    ).filter(models.Operator.is_approved == False).all()
+
+    return [{"operator_id": op.operator_id, "name": user.name, "email": user.email} for op, user in pending_ops]
+
+
+@router.patch("/operators/{operator_id}/approve")
+def approve_operator(
+        operator_id: int,
+        station_id: int,
+        db: Session = Depends(get_db),
+        current_user: models.User = Depends(get_current_user)
+):
+    require_admin(current_user)
+
+    operator = db.query(models.Operator).filter(models.Operator.operator_id == operator_id).first()
+    station = db.query(models.Station).filter(models.Station.station_id == station_id).first()
+
+    if not operator or not station or station.operator_id is not None:
+        raise HTTPException(status_code=400, detail="Invalid transaction or station is already approved anyone .")
+
+    operator.is_approved = True
+    station.operator_id = operator.operator_id  # İSTASYONU ATA
+    db.commit()
+    return {"message": "The operator has been approved and assigned to the first station."}
+
+
+@router.get("/station-claims/pending")
+def get_pending_station_claims(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    require_admin(current_user)
+
+    claims = db.query(models.Station).filter(models.Station.requested_operator_id != None).all()
+
+    result = []
+    for s in claims:
+        user = db.query(models.User).filter(models.User.user_id == s.requested_operator_id).first()
+        if user:
+            result.append({
+                "station_id": s.station_id,
+                "station_name": s.name,
+                "operator_id": user.user_id,
+                "operator_name": user.name
+            })
+    return result
+
+
+@router.patch("/stations/{station_id}/approve-claim")
+def approve_station_claim(station_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    require_admin(current_user)
+    station = db.query(models.Station).filter(models.Station.station_id == station_id).first()
+    if not station or not station.requested_operator_id:
+        raise HTTPException(status_code=404, detail="Could not find any valid transaction.")
+
+    station.operator_id = station.requested_operator_id
+    station.requested_operator_id = None
+    db.commit()
+    return {"message": "The station request has been approved and the assignment has been made."}

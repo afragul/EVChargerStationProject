@@ -2,6 +2,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from fastapi.responses import HTMLResponse
 import os
 from dotenv import load_dotenv
 
@@ -92,3 +93,8 @@ async def get_profile(request: Request):
         name="profile.html",
         context={}
     )
+
+#operator apply icin gerekli
+@app.get("/operator-apply", response_class=HTMLResponse)
+async def operator_apply_page(request: Request):
+    return templates.TemplateResponse(request=request, name="operator_apply.html")
