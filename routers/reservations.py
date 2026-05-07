@@ -148,8 +148,22 @@ def start_charging(reservation_id: int, db: Session = Depends(get_db),
     if reservation.status != "active":
         raise HTTPException(status_code=400, detail="Only reservations that are in the 'active' status can be initiated.")
 
+    now = datetime.now()
+    today = now.date()
+    current_time = now.time()
+
+    if reservation.date != today:
+        raise HTTPException(status_code=400, detail=f"Your reservation date is  ({reservation.date}) , not today!")
+
+    if current_time < reservation.start_time:
+        raise HTTPException(status_code=400,
+                            detail=f"The reservation can be started at  {reservation.start_time.strftime('%H:%M')} o'clock.")
+
+    if current_time > reservation.end_time:
+        raise HTTPException(status_code=400,
+                            detail="Reservation can be ended at.")
+
     reservation.status = "charging"
-    # YENİ: Şarjın başlatıldığı tam zamanı kaydediyoruz
     reservation.actual_start_time = datetime.now()
 
     charger = db.query(models.Charger).filter(models.Charger.charger_id == reservation.charger_id).first()
@@ -172,17 +186,24 @@ def complete_charging(reservation_id: int, db: Session = Depends(get_db),
     driver = db.query(models.Driver).filter(models.Driver.driver_id == current_user.user_id).first()
     charger = db.query(models.Charger).filter(models.Charger.charger_id == reservation.charger_id).first()
 
-    # YENİ SİMÜLASYON: Gerçek saniyeyi dakikaymış gibi hesaplama
-    if reservation.actual_start_time:
-        time_difference = datetime.now() - reservation.actual_start_time
-        actual_seconds = time_difference.total_seconds()
-        simulated_duration_min = max(1, int(actual_seconds))  # 1 saniye = 1 dakika olarak kabul ediyoruz
-    else:
-        simulated_duration_min = 1
+    actual_start = getattr(reservation, "actual_start_time", None)
 
-    simulated_kwh = round((charger.power_kW * (simulated_duration_min / 60)) * 0.8, 2)
+    if actual_start:
+        time_diff = datetime.now() - actual_start
+        duration_min = max(1, int(time_diff.total_seconds()))
+    else:
+        duration_min = 1
+
+    simulated_kwh = round((charger.power_kW * (duration_min / 60)) * 0.8, 2)
     price_per_kwh = charger.price_per_kWh if charger.price_per_kWh else 7.5
     total_cost = round(simulated_kwh * price_per_kwh, 2)
+    potential_balance = driver.wallet_balance + DEFAULT_PROVISION_AMOUNT
+
+    auto_stopped = False #bakiyet kontrolu icin
+    if potential_balance < total_cost:
+        # Bakiyeyi sıfıra çekiyoruz (borca girmesin)
+        total_cost = potential_balance
+        auto_stopped = True
 
     # Önce provizyonu iade et, sonra faturayı kes
     driver.wallet_balance += DEFAULT_PROVISION_AMOUNT
@@ -200,7 +221,7 @@ def complete_charging(reservation_id: int, db: Session = Depends(get_db),
         reservation_id=reservation.reservation_id,
         kwh_consumed=simulated_kwh,
         total_cost=total_cost,
-        duration_min=simulated_duration_min
+        duration_min=duration_min
     )
     db.add(new_session)
 
@@ -214,7 +235,7 @@ def complete_charging(reservation_id: int, db: Session = Depends(get_db),
         "message": "Charging is completed.",
         "kwh": simulated_kwh,
         "cost": total_cost,
-        "duration": simulated_duration_min
+        "duration": duration_min
     }
 
 

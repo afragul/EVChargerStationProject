@@ -275,12 +275,9 @@ window.getDirections = function(destLat, destLng) {
 window.openReservationModal = async function(chargerId, connectorType) {
     selectedChargerId = chargerId;
     const modal = document.getElementById("reservationModal");
-    const scheduleBox = document.getElementById("scheduleBox");
-    const occupiedList = document.getElementById("occupiedTimesList");
     const token = localStorage.getItem("token");
 
     modal.style.display = "flex";
-    if (scheduleBox) scheduleBox.style.display = "none";
 
     const vehicleSelect = document.getElementById("resVehicle");
     vehicleSelect.innerHTML = "";
@@ -302,23 +299,49 @@ window.openReservationModal = async function(chargerId, connectorType) {
     dateInput.value = today;
 
     const updateOccupiedTimes = async (date) => {
-        if(!scheduleBox) return;
+        // Eğer HTML'de scheduleBox yoksa (ki genelde unutulur), JavaScript ile dinamik oluşturalım
+        let scheduleBox = document.getElementById("scheduleBox");
+        if (!scheduleBox) {
+            const dateGroup = document.getElementById("resDate").parentNode;
+            scheduleBox = document.createElement("div");
+            scheduleBox.id = "scheduleBox";
+            scheduleBox.className = "schedule-box";
+            dateGroup.parentNode.insertBefore(scheduleBox, dateGroup.nextSibling);
+        }
+
         try {
-            const res = await fetch(`/reservations/charger/${chargerId}/occupied?date=${date}`, {
+            const res = await fetch(`/reservations/charger/${chargerId}/schedule?target_date=${date}`, {
                 headers: { "Authorization": `Bearer ${token}` }
             });
+
             if (res.ok) {
                 const times = await res.json();
+
                 if (times.length > 0) {
                     scheduleBox.style.display = "block";
-                    occupiedList.innerHTML = times.map(t => `
-                        <span class="time-badge" style="background:rgba(231,76,60,0.2); color:#e74c3c; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:bold; margin-right:4px;">
-                            ${t.start} - ${t.end}
+                    scheduleBox.style.background = "rgba(231,76,60,0.1)";
+                    scheduleBox.style.borderColor = "rgba(231,76,60,0.3)";
+
+                    // Senin tasarladığın şık badge (etiket) görünümü
+                    const timesHtml = times.map(t => `
+                        <span class="time-badge" style="background:rgba(231,76,60,0.2); color:#e74c3c; padding:4px 8px; border-radius:6px; font-size:11px; font-weight:bold; margin-right:5px; display:inline-block; margin-bottom:5px;">
+                            🚫 ${t.start_time.substring(0,5)} - ${t.end_time.substring(0,5)}
                         </span>
                     `).join('');
+
+                    scheduleBox.innerHTML = `
+                        <label style="display:block; font-size:0.85rem; font-weight:bold; color:#e74c3c; margin-bottom:8px;">📅 Occupied Times</label>
+                        <div>${timesHtml}</div>
+                    `;
                 } else {
+                    // Hiç dolu saat yoksa yeşil ferah ekran
                     scheduleBox.style.display = "block";
-                    occupiedList.innerHTML = '<span style="color:#2ecc71; font-size:11px;">İstasyon bu tarihte tamamen boş.</span>';
+                    scheduleBox.style.background = "rgba(46, 204, 113, 0.1)";
+                    scheduleBox.style.borderColor = "rgba(46, 204, 113, 0.3)";
+                    scheduleBox.innerHTML = `
+                        <label style="display:block; font-size:0.85rem; font-weight:bold; color:#2ecc71; margin-bottom:5px;">📅 Occupied Times</label>
+                        <span style="color:#2ecc71; font-size:12px; font-weight:bold;">All day available! ⚡</span>
+                    `;
                 }
             }
         } catch (e) { console.error("Occupied times load error:", e); }

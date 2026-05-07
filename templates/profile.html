@@ -71,7 +71,7 @@
                         <div><div style="font-size: 11px; color: #a9cce3; font-weight: bold;">ENERGY</div><div id="liveKwh" style="font-size: 28px; font-weight: bold; color: #2ecc71;">0.00</div></div>
                         <div><div style="font-size: 11px; color: #a9cce3; font-weight: bold;">COST</div><div id="liveCost" style="font-size: 28px; font-weight: bold; color: #f1c40f;">0.00</div></div>
                     </div>
-                    <button id="liveStopBtn" style="background: #e74c3c; border: none; color: white; padding: 12px; border-radius: 8px; cursor: pointer; width:100%; font-weight:bold;">🛑 STOP CHARGING</button>
+                    <button onclick="window.stopCharging(${res.reservation_id})" class="senin-mevcut-classlarin">🛑 STOP CHARGING</button>
                 </div>
 
                 <div class="vehicle-section" style="margin-top: 25px;" id="reservationsSection">
