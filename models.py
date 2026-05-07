@@ -129,6 +129,7 @@ class Reservation(Base):
     start_time = Column(Time)
     end_time = Column(Time)
     status = Column(String, default="active")
+    actual_start_time = Column(DateTime, nullable=True)
 
     # YENİ: Şarjın tam olarak başladığı saniyeyi tutacak sütun
     actual_start_time = Column(DateTime, nullable=True)

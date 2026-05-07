@@ -563,6 +563,13 @@ function renderHistoryRes(r, stations) {
 
 function startLiveDashboard(resId) {
     const token = localStorage.getItem("token");
+
+    const livePanel = document.getElementById('liveChargingPanel');
+    if (livePanel) {
+        // Paneldeki butonu bulur ve tıklanınca stopCharging fonksiyonunu tetikler
+        const stopBtn = livePanel.querySelector('button');
+        if (stopBtn) stopBtn.onclick = () => window.stopCharging(resId);
+    }
     let endTimeObj = null;
 
     // Rezervasyon bilgilerini çek (Bitiş saatini garantiye alalım)
@@ -639,10 +646,15 @@ function formatTime(seconds) {
 }
 
 window.startCharging = async function(reservationId) {
+    const token = localStorage.getItem("token");
     try {
-        const res = await fetch(`/reservations/${reservationId}/start`, { method: "PATCH", headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` } });
+        const res = await fetch(`/reservations/${reservationId}/start`, {
+            method: "PATCH",
+            headers: { "Authorization": `Bearer ${token}` }
+        });
+
         if(res.ok) {
-            localStorage.setItem('chargeStart_' + reservationId, Date.now());
+            window.showCustomAlert("Charging started! We will monitor your balance.", "Success");
             window.location.reload();
         } else {
             const data = await res.json();
@@ -652,14 +664,24 @@ window.startCharging = async function(reservationId) {
 };
 
 window.stopCharging = async function(resId) {
-    window.showCustomConfirm("End session?", "Stop", async () => {
+    const token = localStorage.getItem("token");
+
+    window.showCustomConfirm("Do you want to stop charging and complete the session?", "Stop Charging", async () => {
         try {
-            const res = await fetch(`/reservations/${resId}/complete`, { method: "PATCH", headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` } });
-            if(res.ok) {
-                localStorage.removeItem('chargeStart_' + resId);
+            const res = await fetch(`/reservations/${resId}/complete`, {
+                method: "PATCH",
+                headers: { "Authorization": `Bearer ${token}` }
+            });
+
+            if (res.ok) {
+                const data = await res.json();
+                const msg = data.auto_stopped ? "⚠️ Balance too low! Charging auto-stopped." : "✅ Charging completed manually.";
+                window.showCustomAlert(`${msg}\nCost: ${data.cost} TL\nEnergy: ${data.kwh} kWh`, "Session Ended");
                 window.location.reload();
+            } else {
+                window.showCustomAlert("Error stopping the charge.", "Error");
             }
-        } catch(e) { console.error(e); }
+        } catch (e) { console.error(e); }
     });
 };
 
@@ -669,6 +691,38 @@ window.confirmCancelReservation = (id) => window.showCustomConfirm("Cancel booki
         if(res.ok) window.location.reload();
     } catch (e) { console.error(e); }
 });
+
+
+async function checkActiveChargingSession() {
+    const token = localStorage.getItem("token");
+    if (!token) return;
+
+    try {
+        const res = await fetch("/reservations/me", { headers: { "Authorization": `Bearer ${token}` } });
+        const reservations = await res.json();
+
+        // Şuan şarjda olan bir rezervasyon var mı?
+        const activeSession = reservations.find(r => r.status === "charging");
+
+        if (activeSession) {
+            // Kullanıcı verilerini çek (bakiye için)
+            const userRes = await fetch("/users/me", { headers: { "Authorization": `Bearer ${token}` } });
+            const userData = await userRes.json();
+            const driverData = userData.driver_profile;
+
+            // BASİT MANTIK: Eğer bakiye 5 TL'nin altına düştüyse otomatik durdur
+            // (Bu değer charger kWh fiyatına göre de dinamik yapılabilir)
+            if (driverData && driverData.wallet_balance < 5.0) {
+                console.log("Low balance detected! Auto-stopping...");
+                window.stopCharging(activeSession.reservation_id);
+            }
+        }
+    } catch (e) { console.log("Session monitor error"); }
+}
+
+// Her 10 saniyede bir bakiyeyi kontrol et
+setInterval(checkActiveChargingSession, 10000);
+
 
 // script.js içindeki openIssueModal
 window.openIssueModal = function(chargerId) {
