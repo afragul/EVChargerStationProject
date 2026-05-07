@@ -3,6 +3,7 @@ window.confirmCallback = null;
 window.chargeInterval = null;
 
 
+
 // BİLDİRİM SİSTEMİ FONKSİYONLARI
 
 function getNotifKey() { return 'ev_notifs_' + (window.currentUserId || 'guest'); }

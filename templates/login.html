@@ -67,7 +67,15 @@
         </form>
     </div>
 
+    <div style="position: absolute; top: 20px; right: 20px; z-index: 10;">
+    <button onclick="toggleLanguage()" id="langBtn" style="background:#3498db; color:white; border:none; padding:6px 12px; border-radius:8px; font-weight:bold; cursor:pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.3); transition: 0.3s;">
+        EN 🇬🇧
+    </button>
+</div>
+
     <!-- Backend bağlantısını sağlayan JavaScript -->
     <script src="/static/auth.js"></script>
+    <!-- Language desteği -->
+    <script src="/static/language.js?v=1"></script>
 </body>
 </html>
