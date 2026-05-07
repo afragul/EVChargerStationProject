@@ -125,13 +125,15 @@ window.loadProfile = async function() {
 
 
 // ADMIN (SİSTEM YÖNETİCİSİ) FONKSİYONLARI
+// ADMIN (SİSTEM YÖNETİCİSİ) FONKSİYONLARI
 async function loadAdminData(token) {
     try {
-        const [opRes, stRes, pendingOpRes , claimsRes] = await Promise.all([
+        const [opRes, stRes, pendingOpRes, claimsRes, analyticsRes] = await Promise.all([
             fetch("/admin/operators", { headers: { "Authorization": `Bearer ${token}` } }),
             fetch("/stations/", { headers: { "Authorization": `Bearer ${token}` } }),
             fetch("/admin/operators/pending", { headers: { "Authorization": `Bearer ${token}` } }),
-            fetch("/admin/station-claims/pending", { headers: { "Authorization": `Bearer ${token}` } })
+            fetch("/admin/station-claims/pending", { headers: { "Authorization": `Bearer ${token}` } }),
+            fetch("/admin/analytics", { headers: { "Authorization": `Bearer ${token}` } }) // 📊 YENİ: Analitik verisi
         ]);
 
         if (opRes.ok && stRes.ok) {
@@ -141,6 +143,12 @@ async function loadAdminData(token) {
             if (pendingOpRes.ok) renderPendingOperators(await pendingOpRes.json(), stations);
         }
         if (claimsRes.ok) renderStationClaims(await claimsRes.json());
+
+        // 📊 YENİ: Analitikleri çizdir
+        if (analyticsRes.ok) {
+            const analyticsData = await analyticsRes.json();
+            renderAdminAnalytics(analyticsData);
+        }
 
     } catch (e) { console.error("Admin data error:", e); }
 }
@@ -243,24 +251,43 @@ window.approveStationClaim = async function(stationId) {
 };
 
 
+// İstasyon verilerini güvenli bir şekilde hafızada tutuyoruz (HTML'i bozmaması için)
+window.adminStationsData = [];
+
 function renderAdminStations(stations, operators) {
     const el = document.getElementById("adminStationsList");
     if (!el) return;
-    if (stations.length === 0) {
-        el.innerHTML = '<p style="color:#666; text-align:center; width:100%;">No stations found in the system.</p>';
+
+    // Verileri global hafızaya al
+    window.adminStationsData = stations;
+
+    // 1. YENİ İSTASYON EKLEME BUTONU
+    let html = `
+    <div style="margin-bottom: 20px; text-align: right;">
+        <button onclick="openStationModal()" style="background:#2ecc71; border:none; color:white; padding:10px 20px; border-radius:8px; font-weight:bold; cursor:pointer; font-size:14px; box-shadow: 0 4px 6px rgba(46, 204, 113, 0.3);">
+            ➕ Create New Station
+        </button>
+    </div>`;
+
+    if (!stations || stations.length === 0) {
+        html += '<p style="color:#666; text-align:center; width:100%;">No stations found in the system.</p>';
+        el.innerHTML = html;
         return;
     }
 
-    let html = '';
     stations.forEach(s => {
         let opOptions = `<option value="">-- Unassigned (Available) --</option>` +
             operators.map(o => `<option value="${o.operator_id}" ${s.operator_id === o.operator_id ? 'selected' : ''}>${o.name}</option>`).join('');
 
         html += `
-        <div style="background:#1a2922; padding:20px; border-radius:12px; margin-bottom:20px; border:1px solid rgba(155, 89, 182, 0.5); width:100%;">
+        <div style="background:#1a2922; padding:20px; border-radius:12px; margin-bottom:20px; border:1px solid rgba(155, 89, 182, 0.5); width:100%; position:relative;">
             
-            <!-- İstasyon Başlığı ve Atama İşlemi -->
-            <div style="border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:15px; margin-bottom:15px;">
+            <div style="position:absolute; top:20px; right:20px; display:flex; gap:10px;">
+                <button onclick="editStationAction(${s.station_id})" style="background:none; border:none; color:#f1c40f; cursor:pointer; font-size:16px;" title="Edit Station"><i class="fas fa-edit"></i></button>
+                <button onclick="deleteStation('${s.station_id}')" style="background:none; border:none; color:#e74c3c; cursor:pointer; font-size:16px;" title="Delete Station"><i class="fas fa-trash"></i></button>
+            </div>
+
+            <div style="border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:15px; margin-bottom:15px; padding-right:60px;">
                 <h4 style="color:#9b59b6; margin:0 0 15px 0; font-size:18px;"><i class="fas fa-charging-station"></i> ${s.name}</h4>
                 
                 <div style="display:flex; flex-direction:column; gap:8px;">
@@ -274,32 +301,50 @@ function renderAdminStations(stations, operators) {
                 </div>
             </div>
 
-            <!-- Şarj Cihazları Listesi -->
-            <label style="font-size: 11px; color: #888; font-weight:bold; text-transform:uppercase; margin-bottom:8px; display:block;">Chargers Configuration:</label>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                <label style="font-size: 11px; color: #888; font-weight:bold; text-transform:uppercase;">Chargers Configuration:</label>
+                <button onclick="openChargerModal('${s.station_id}')" style="background:#3498db; border:none; color:white; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">➕ Add Charger</button>
+            </div>
+            
             <div style="display:flex; flex-direction:column; gap:12px;">`;
 
-        s.chargers.forEach(c => {
-            html += `
-                <div style="background:rgba(0,0,0,0.3); padding:15px; border-radius:10px; border-left:4px solid #3498db; width:100%;">
-                    <div style="display:flex; justify-content:space-between; align-items:center;">
-                        <strong style="color:white; font-size:14px;">🔌 Charger #${c.charger_id}</strong>
+        // ÇÖKME ÖNLEYİCİ: Eğer istasyonun henüz cihazı yoksa kodu çökertmek yerine güvenli boş array kullan
+        const stationChargers = s.chargers || [];
+
+        if (stationChargers.length === 0) {
+            html += `<div style="color:#e74c3c; font-size:12px; text-align:center; padding:10px; background:rgba(0,0,0,0.2); border-radius:8px;">⚠️ This station has no chargers yet.</div>`;
+        } else {
+            stationChargers.forEach(c => {
+                html += `
+                <div style="background:rgba(0,0,0,0.3); padding:15px; border-radius:10px; border-left:4px solid #3498db; width:100%; position:relative;">
+                    
+                    <button onclick="deleteCharger('${c.charger_id}')" style="position:absolute; top:15px; right:15px; background:none; border:none; color:#e74c3c; cursor:pointer; font-size:14px;" title="Remove Charger"><i class="fas fa-trash"></i></button>
+
+                    <div style="display:flex; align-items:center; margin-bottom:10px;">
+                        <strong style="color:white; font-size:14px; margin-right:10px;">🔌 Charger #${c.charger_id}</strong>
                         <span style="font-size:11px; color:#bdc3c7; background:rgba(255,255,255,0.1); padding:4px 8px; border-radius:4px;">${c.power_kW}kW ${c.connector_type}</span>
                     </div>
                     
-                    <div style="display:flex; align-items:center; justify-content:space-between; margin-top:12px;">
+                    <div style="display:flex; align-items:center; justify-content:flex-start; margin-top:12px; gap:10px;">
                         <span style="font-size:12px; color:#aaa; font-weight:bold;">₺/kWh:</span>
-                        <div style="display:flex; gap:8px;">
-                            <input type="number" id="price_${c.charger_id}" value="${c.price_per_kWh}" step="0.5" style="width:70px; text-align:center; padding:6px; background:#2c3e50; color:white; border:1px solid #34495e; border-radius:6px; font-size:13px; outline:none;">
-                            <button onclick="updateChargerPrice('${c.charger_id}')" style="background:#3498db; border:none; color:white; padding:6px 12px; border-radius:6px; cursor:pointer; font-size:12px; font-weight:bold;">Save</button>
-                        </div>
+                        <input type="number" id="price_${c.charger_id}" value="${c.price_per_kWh}" step="0.5" style="width:70px; text-align:center; padding:6px; background:#2c3e50; color:white; border:1px solid #34495e; border-radius:6px; font-size:13px; outline:none;">
+                        <button onclick="updateChargerPrice('${c.charger_id}')" style="background:#3498db; border:none; color:white; padding:6px 12px; border-radius:6px; cursor:pointer; font-size:12px; font-weight:bold;">Save</button>
                     </div>
-                </div>
-            `;
-        });
+                </div>`;
+            });
+        }
         html += `</div></div>`;
     });
     el.innerHTML = html;
 }
+
+// Düzenleme butonuna basıldığında veriyi güvenli şekilde modal'a aktaran fonksiyon
+window.editStationAction = function(stationId) {
+    const station = window.adminStationsData.find(s => s.station_id === stationId);
+    if(station) {
+        openStationModal(station);
+    }
+};
 
 window.assignOperatorToStation = async function(stationId) {
     const opId = document.getElementById(`assign_op_${stationId}`).value;
@@ -495,12 +540,21 @@ function renderActiveRes(r, stations) {
 
 function renderHistoryRes(r, stations) {
     let sName = "Station";
-    stations.forEach(s => { if(s.chargers.some(c => c.charger_id === r.charger_id)) sName = s.name; });
-    let c = r.status === 'completed' ? '#2ecc71' : '#e74c3c';
-    // BORDER-LEFT KISMI DÜZELTİLDİ (Boşluk eklendi)
-    return `<div class="vehicle-item" style="border-left: 4px solid ${c}; opacity:0.8;">
+
+    stations.forEach(s => {
+        if(s.chargers.some(charger => charger.charger_id === r.charger_id)) {
+            sName = s.name;
+        }
+    });
+
+    let statusColor = r.status === 'completed' ? '#2ecc71' : '#e74c3c';
+
+    return `<div class="vehicle-item" style="border-left: 4px solid ${statusColor}; opacity:0.8;">
         <div class="vehicle-info" style="width: 100%;">
-            <div style="display:flex; justify-content:space-between;"><strong>📅 ${r.date}</strong><span style="font-size:9px; color:${c};">${r.status.toUpperCase()}</span></div>
+            <div style="display:flex; justify-content:space-between;">
+                <strong>📅 ${r.date}</strong>
+                <span style="font-size:9px; color:${statusColor};">${r.status.toUpperCase()}</span>
+            </div>
             <p style="font-size:0.8rem; color:#888; margin:4px 0;">📍 ${sName}</p>
             ${r.charging_session ? `<p style="font-size:10px; color:#f1c40f; margin:0;">${r.charging_session.duration_min} min | ${r.charging_session.kwh_consumed} kWh | ${r.charging_session.total_cost} ₺</p>` : ''}
         </div>
@@ -783,3 +837,213 @@ document.getElementById("vehicleForm")?.addEventListener("submit", async (e) => 
     }
 });document.addEventListener("DOMContentLoaded", window.loadProfile);
 document.head.insertAdjacentHTML("beforeend", `<style>@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } } button { cursor: pointer; }</style>`);
+// ==========================================
+// 🛠️ ADMIN İSTASYON & CİHAZ CRUD İŞLEMLERİ 🛠️
+// ==========================================
+
+window.openStationModal = function(station = null) {
+    document.getElementById("adminStationModal").style.display = "flex";
+
+    // 1. Kutu İçeriklerini Doldur veya Boşalt
+    if (station) {
+        document.getElementById("stationModalTitle").innerText = "✏️ Edit Station";
+        document.getElementById("editStationId").value = station.station_id;
+        document.getElementById("mStationName").value = station.name;
+        document.getElementById("mStationAddress").value = station.address;
+        document.getElementById("mStationLat").value = station.latitude;
+        document.getElementById("mStationLng").value = station.longitude;
+        document.getElementById("mStationHours").value = station.operating_hours;
+    } else {
+        document.getElementById("stationModalTitle").innerText = "➕ Add Station";
+        document.getElementById("editStationId").value = "";
+        document.getElementById("mStationName").value = "";
+        document.getElementById("mStationAddress").value = "";
+        document.getElementById("mStationLat").value = "";
+        document.getElementById("mStationLng").value = "";
+        document.getElementById("mStationHours").value = "24/7";
+    }
+
+    // 2. Harita Kutusunu Görünür Yap
+    const mapDiv = document.getElementById("adminMapPicker");
+    if (!mapDiv) return; // Eğer HTML'e eklenmemişse hata vermesin
+    mapDiv.style.display = "block";
+
+    // 3. Haritayı Çizdir (Modalın açılmasını 200ms bekliyoruz ki harita gri kalmasın)
+    setTimeout(() => {
+        // İzmir merkez koordinatları (Varsayılan)
+        let lat = parseFloat(document.getElementById("mStationLat").value) || 38.4237;
+        let lng = parseFloat(document.getElementById("mStationLng").value) || 27.1428;
+
+        const pickerMap = new google.maps.Map(mapDiv, {
+            center: { lat: lat, lng: lng },
+            zoom: 13,
+            streetViewControl: false,
+            mapTypeControl: false,
+            fullscreenControl: false
+        });
+
+        // Sürüklenebilir Kırmızı Pin
+        const pickerMarker = new google.maps.Marker({
+            position: { lat: lat, lng: lng },
+            map: pickerMap,
+            draggable: true,
+            title: "Konumu seçmek için beni sürükle!"
+        });
+
+        // OLAY 1: Kullanıcı pini sürükleyip bıraktığında
+        pickerMarker.addListener("dragend", (e) => {
+            document.getElementById("mStationLat").value = e.latLng.lat().toFixed(6);
+            document.getElementById("mStationLng").value = e.latLng.lng().toFixed(6);
+        });
+
+        // OLAY 2: Kullanıcı haritada boş bir yere tıkladığında
+        pickerMap.addListener("click", (e) => {
+            pickerMarker.setPosition(e.latLng); // Pini tıklanan yere taşı
+            document.getElementById("mStationLat").value = e.latLng.lat().toFixed(6);
+            document.getElementById("mStationLng").value = e.latLng.lng().toFixed(6);
+        });
+    }, 200);
+};
+
+window.closeAdminModal = (id) => document.getElementById(id).style.display = "none";
+
+window.submitStationForm = async function() {
+    const token = localStorage.getItem("token");
+    const id = document.getElementById("editStationId").value;
+    const payload = {
+        name: document.getElementById("mStationName").value,
+        address: document.getElementById("mStationAddress").value,
+        latitude: parseFloat(document.getElementById("mStationLat").value),
+        longitude: parseFloat(document.getElementById("mStationLng").value),
+        operating_hours: document.getElementById("mStationHours").value
+    };
+
+    // ID yoksa POST (admin.py rotası), varsa PUT (stations.py rotası)
+    const url = id ? `/stations/${id}` : `/admin/stations`;
+    const method = id ? "PUT" : "POST";
+
+    try {
+        const res = await fetch(url, {
+            method: method,
+            headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
+        if (res.ok) window.location.reload();
+        else window.showCustomAlert("İşlem sırasında hata oluştu.", "Error");
+    } catch (e) { console.error(e); }
+};
+
+window.deleteStation = function(id) {
+    window.showCustomConfirm("This will delete the station and all its chargers. Are you sure?", "Delete Station", async () => {
+        try {
+            const res = await fetch(`/stations/${id}`, { method: "DELETE", headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` }});
+            if (res.ok) window.location.reload();
+        } catch (e) { console.error(e); }
+    });
+};
+
+window.openChargerModal = function(stationId) {
+    document.getElementById("adminChargerModal").style.display = "flex";
+    document.getElementById("chargerTargetStationId").value = stationId;
+};
+
+window.submitChargerForm = async function() {
+    const token = localStorage.getItem("token");
+    const payload = {
+        station_id: parseInt(document.getElementById("chargerTargetStationId").value),
+        power_kW: parseFloat(document.getElementById("mChargerPower").value),
+        price_per_kWh: parseFloat(document.getElementById("mChargerPrice").value),
+        connector_type: document.getElementById("mChargerType").value,
+        status: "available",
+        type: document.getElementById("mChargerType").value === "Type 2" ? "AC" : "DC"
+    };
+
+    try {
+        const res = await fetch(`/chargers/`, {
+            method: "POST",
+            headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
+        if (res.ok) window.location.reload();
+        else window.showCustomAlert("Error adding charger.", "Error");
+    } catch (e) { console.error(e); }
+};
+
+window.deleteCharger = function(id) {
+    window.showCustomConfirm("Are you sure you want to remove this charger?", "Remove Charger", async () => {
+        try {
+            const res = await fetch(`/chargers/${id}`, { method: "DELETE", headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` }});
+            if (res.ok) window.location.reload();
+        } catch (e) { console.error(e); }
+    });
+};
+
+// ==========================================
+// 📊 ADMIN ANALYTICS & CHARTS 📊
+// ==========================================
+
+window.stationChartInstance = null;
+window.peakChartInstance = null;
+
+function renderAdminAnalytics(data) {
+    // 1. Özet Kartlarını Doldur
+    document.getElementById("analyticsTotalRevenue").innerText = (data.total_revenue || 0).toFixed(2) + " ₺";
+    document.getElementById("analyticsTotalKwh").innerText = (data.total_kwh || 0).toFixed(2) + " kWh";
+
+    // Genel Grafik Ayarları
+    Chart.defaults.color = '#aaa';
+    Chart.defaults.font.family = 'inherit';
+
+    // 2. İstasyon Kullanım Grafiği (Bar Chart)
+    const ctxStation = document.getElementById('stationUsageChart');
+    if (ctxStation) {
+        if (window.stationChartInstance) window.stationChartInstance.destroy(); // Eski grafiği sil (Bug olmaması için)
+
+        window.stationChartInstance = new Chart(ctxStation.getContext('2d'), {
+            type: 'bar',
+            data: {
+                labels: data.station_usage.map(s => s.station),
+                datasets: [{
+                    label: 'Charging Sessions',
+                    data: data.station_usage.map(s => s.sessions),
+                    backgroundColor: 'rgba(46, 204, 113, 0.6)',
+                    borderColor: '#2ecc71',
+                    borderWidth: 1,
+                    borderRadius: 4
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } },
+                plugins: { legend: { display: false } }
+            }
+        });
+    }
+
+    // 3. Peak Hour (Yoğun Saat) Grafiği (Line Chart)
+    const ctxPeak = document.getElementById('peakHoursChart');
+    if (ctxPeak) {
+        if (window.peakChartInstance) window.peakChartInstance.destroy(); // Eski grafiği sil
+
+        window.peakChartInstance = new Chart(ctxPeak.getContext('2d'), {
+            type: 'line',
+            data: {
+                labels: data.peak_hours.map(p => p.hour + ":00"),
+                datasets: [{
+                    label: 'Active Sessions',
+                    data: data.peak_hours.map(p => p.count),
+                    backgroundColor: 'rgba(243, 156, 18, 0.2)',
+                    borderColor: '#f39c12',
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.4 // Çizgileri tatlı bir şekilde yumuşatır
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: { y: { beginAtZero: true, suggestedMax: 5, ticks: { stepSize: 1 } } },
+                plugins: { legend: { display: false } }
+            }
+        });
+    }
+}

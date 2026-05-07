@@ -159,3 +159,60 @@ def approve_station_claim(station_id: int, db: Session = Depends(get_db), curren
     station.requested_operator_id = None
     db.commit()
     return {"message": "The station request has been approved and the assignment has been made."}
+
+
+@router.get("/analytics")
+def get_admin_analytics(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    require_admin(current_user)
+
+    # Tamamlanmış tüm rezervasyonları veritabanından çekiyoruz
+    completed_reservations = db.query(models.Reservation).filter(models.Reservation.status == "completed").all()
+
+    total_revenue = 0.0
+    total_kwh = 0.0
+    station_stats = {}
+
+    # Günün 24 saati için sayaç oluştur (Örn: "00", "01", ..., "23")
+    peak_hours = {f"{i:02d}": 0 for i in range(24)}
+
+    for res in completed_reservations:
+        # 1. Peak Hour (Yoğun Saat) Hesaplaması
+        if res.start_time:
+            try:
+                # start_time '14:30' formatında bir string veya datetime objesi ise saati al
+                hour_str = str(res.start_time).split(':')[0]
+                if hour_str in peak_hours:
+                    peak_hours[hour_str] += 1
+            except Exception:
+                pass
+
+        # 2. Gelir ve Tüketim Hesaplaması
+        session = db.query(models.ChargingSession).filter(
+            models.ChargingSession.reservation_id == res.reservation_id).first()
+        if session:
+            cost = float(session.total_cost or 0.0)
+            kwh = float(session.kwh_consumed or 0.0)
+
+            total_revenue += cost
+            total_kwh += kwh
+
+            # 3. İstasyon Bazlı İstatistikler için İstasyonu Bul
+            charger = db.query(models.Charger).filter(models.Charger.charger_id == res.charger_id).first()
+            if charger:
+                station = db.query(models.Station).filter(models.Station.station_id == charger.station_id).first()
+                if station:
+                    s_name = station.name
+                    if s_name not in station_stats:
+                        station_stats[s_name] = {"revenue": 0.0, "sessions": 0, "kwh": 0.0}
+
+                    station_stats[s_name]["revenue"] += cost
+                    station_stats[s_name]["sessions"] += 1
+                    station_stats[s_name]["kwh"] += kwh
+
+    # Frontend'in grafik çizebilmesi için veriyi düzenleyip gönderiyoruz
+    return {
+        "total_revenue": total_revenue,
+        "total_kwh": total_kwh,
+        "station_usage": [{"station": k, **v} for k, v in station_stats.items()],
+        "peak_hours": [{"hour": k, "count": v} for k, v in peak_hours.items()]
+    }
