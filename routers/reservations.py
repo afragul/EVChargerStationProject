@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 import models, schemas
 from database import get_db
 from routers.auth import get_current_user
@@ -23,6 +23,20 @@ def create_reservation(
     if current_user.role != "driver":
         raise HTTPException(status_code=403, detail="Only drivers can make reservations.")
 
+    now = datetime.now()
+    start_datetime = datetime.combine(req.date, req.start_time)
+    end_datetime = datetime.combine(req.date, req.end_time)
+
+    if start_datetime < now:
+        raise HTTPException(status_code=400, detail = "You cannot make reservations for a past date." )
+    if end_datetime <= start_datetime:
+        raise HTTPException(status_code=400, detail="The end time must be after the start time.")
+    
+    duration = end_datetime - start_datetime
+    if duration > timedelta(hours=2):
+        raise HTTPException(status_code=400, detail="You can reserve a device for a maximum of 2 hours (120 minutes) at a time.")
+    
+    
     driver = db.query(models.Driver).filter(models.Driver.driver_id == current_user.user_id).first()
 
     vehicle = db.query(models.Vehicle).filter(

@@ -209,10 +209,26 @@ def get_admin_analytics(db: Session = Depends(get_db), current_user: models.User
                     station_stats[s_name]["sessions"] += 1
                     station_stats[s_name]["kwh"] += kwh
 
+    total_users = db.query(models.User).count()
+    total_drivers = db.query(models.Driver).count()
+    total_operators = db.query(models.Operator).count()
+
+    active_reservations_count = db.query(models.Reservation).filter(models.Reservation.status == 'active').count()
+    completed_sessions_count = len(completed_reservations)
+
+    user_activity = {
+        "total_users" : total_users,
+        "total_drivers" : total_drivers,
+        "total_operators" : total_operators,
+        "active_reservations" : active_reservations_count,
+        "completed_sessions" : completed_sessions_count
+    }
+
     # Frontend'in grafik çizebilmesi için veriyi düzenleyip gönderiyoruz
     return {
         "total_revenue": total_revenue,
         "total_kwh": total_kwh,
         "station_usage": [{"station": k, **v} for k, v in station_stats.items()],
-        "peak_hours": [{"hour": k, "count": v} for k, v in peak_hours.items()]
+        "peak_hours": [{"hour": k, "count": v} for k, v in peak_hours.items()],
+        "user_activity" : user_activity
     }

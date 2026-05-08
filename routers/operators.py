@@ -134,3 +134,74 @@ def resolve_issue(issue_id: int, db: Session = Depends(get_db), current_user: mo
     issue.status = "resolved"
     db.commit()
     return {"message": "The problem has been marked as successfully resolved."}
+
+
+@router.get("/analytics")
+def get_operator_analytics(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    if current_user.role != "operator":
+        raise HTTPException(status_code=403, detail="Unauthorized access.")
+
+    # 1. Sadece bu operatöre ait istasyonları ve cihazları bul
+    my_stations = db.query(models.Station.station_id).filter(models.Station.operator_id == current_user.user_id).subquery()
+    my_chargers = db.query(models.Charger.charger_id).filter(models.Charger.station_id.in_(my_stations)).subquery()
+
+    # 2. Sadece bu cihazlardaki tamamlanmış işlemleri çek
+    completed_reservations = db.query(models.Reservation).filter(
+        models.Reservation.status == "completed",
+        models.Reservation.charger_id.in_(my_chargers)
+    ).all()
+
+    total_revenue = 0.0
+    total_kwh = 0.0
+    station_stats = {}
+    peak_hours = {f"{i:02d}": 0 for i in range(24)}
+    unique_users = set()
+
+    for res in completed_reservations:
+        # Peak Hour Analizi
+        if res.start_time:
+            try:
+                hour_str = str(res.start_time).split(':')[0]
+                if hour_str in peak_hours:
+                    peak_hours[hour_str] += 1
+            except Exception:
+                pass
+        
+        # Benzersiz Müşteri Sayısı
+        unique_users.add(res.driver_id)
+
+        # Ciro ve İstasyon Utilizasyon Analizi
+        session = db.query(models.ChargingSession).filter(
+            models.ChargingSession.reservation_id == res.reservation_id).first()
+        if session:
+            cost = float(session.total_cost or 0.0)
+            kwh = float(session.kwh_consumed or 0.0)
+
+            total_revenue += cost
+            total_kwh += kwh
+
+            charger = db.query(models.Charger).filter(models.Charger.charger_id == res.charger_id).first()
+            if charger:
+                station = db.query(models.Station).filter(models.Station.station_id == charger.station_id).first()
+                if station:
+                    s_name = station.name
+                    if s_name not in station_stats:
+                        station_stats[s_name] = {"revenue": 0.0, "sessions": 0, "kwh": 0.0}
+
+                    station_stats[s_name]["revenue"] += cost
+                    station_stats[s_name]["sessions"] += 1
+                    station_stats[s_name]["kwh"] += kwh
+
+    # User Activity Summary (Operatöre Özel)
+    user_activity = {
+        "unique_drivers_served": len(unique_users),
+        "completed_sessions": len(completed_reservations)
+    }
+
+    return {
+        "total_revenue": total_revenue,
+        "total_kwh": total_kwh,
+        "station_usage": [{"station": k, **v} for k, v in station_stats.items()],
+        "peak_hours": [{"hour": k, "count": v} for k, v in peak_hours.items()],
+        "user_activity": user_activity
+    }
