@@ -114,7 +114,6 @@ async function loadStations() {
                 (res.status === "active" || res.status === "confirmed" || res.status === "charging")
             );
 
-            // CİHAZLAR LİSTESİ (Çift döngü hatası temizlendi)
             let chargersHtml = "";
 
             if (station.chargers && station.chargers.length > 0) {
@@ -124,7 +123,17 @@ async function loadStations() {
 
                     let actionHtml = "";
                     if (currentUserRole === 'driver') {
-                        const reportIcon = `<i class="fas fa-exclamation-triangle" onclick="window.openIssueModal('${c.charger_id}')" style="color:#f39c12; cursor:pointer; margin-right:12px; font-size:16px;"></i>`;
+
+                        // 🚀 YENİ VE KATI MANTIK: Sürücünün bu cihazda ŞU AN "active" veya "charging" durumunda bir rezervasyonu var mı?
+                        const hasActiveReservation = myReservations.some(res =>
+                            res.charger_id === c.charger_id &&
+                            (res.status === "active" || res.status === "charging")
+                        );
+
+                        // SADECE aktif rezervasyonu varsa report ikonunu oluştur, yoksa hiçbir şey gösterme
+                        const reportIcon = hasActiveReservation
+                            ? `<i class="fas fa-exclamation-triangle" onclick="window.openIssueModal('${c.charger_id}')" style="color:#f39c12; cursor:pointer; margin-right:12px; font-size:16px;" title="Report Issue"></i>`
+                            : ``;
 
                         if (!isCompatible) {
                             actionHtml = `<div style="display:flex; align-items:center;">${reportIcon}<span style="color:#e74c3c; font-size:11px; font-weight:bold;">Incompatible</span></div>`;
@@ -175,7 +184,12 @@ async function loadStations() {
                     actionSectionHtml = `<button onclick="window.getDirections(${station.latitude}, ${station.longitude})" style="background:#3498db; color:white; border:none; padding:12px; width:100%; cursor:pointer; border-radius: 8px; font-weight:bold; font-size:13px;">📍 Get Directions</button>`;
                 }
             }
-
+            // Mesafe metnini hazırla
+            let distText = "";
+            if (userLocation) {
+                const km = calculateLinearDistance(userLocation.lat, userLocation.lng, station.latitude, station.longitude);
+                distText = `<span style="font-size:12px; color:#7f8c8d; font-weight:normal;">(${km} km)</span>`;
+            }
             const infoWindow = new google.maps.InfoWindow({
                 content: `
                     <div style="width:240px; padding:5px; color: #2c3e50 !important; font-family: 'Segoe UI', sans-serif;">
@@ -264,11 +278,28 @@ function getUserLocation() {
 }
 
 window.getDirections = function(destLat, destLng) {
-    if (!userLocation) { window.showCustomAlert("Please allow location access first.", "Location Error"); return; }
-    const request = { origin: userLocation, destination: { lat: destLat, lng: destLng }, travelMode: 'DRIVING' };
+    if (!userLocation) {
+        window.showCustomAlert("Please allow location access first.", "Location Error");
+        return;
+    }
+    const request = {
+        origin: userLocation,
+        destination: { lat: destLat, lng: destLng },
+        travelMode: 'DRIVING'
+    };
     directionsService.route(request, function(result, status) {
-        if (status === 'OK') directionsRenderer.setDirections(result);
-        else window.showCustomAlert("Directions failed: " + status, "Routing Error");
+        if (status === 'OK') {
+            directionsRenderer.setDirections(result);
+
+            // 🚀 MESAFE VE SÜREYİ ALIYORUZ
+            const distance = result.routes[0].legs[0].distance.text;
+            const duration = result.routes[0].legs[0].duration.text;
+
+            // Kullanıcıya şık bir bildirimle mesafeyi yazalım
+            window.showCustomAlert(`Distance: ${distance}\nEstimated Time: ${duration}`, "Route Found 📍");
+        } else {
+            window.showCustomAlert("Directions failed: " + status, "Routing Error");
+        }
     });
 };
 
@@ -384,3 +415,14 @@ window.logout = function() {
     localStorage.removeItem('token');
     window.location.href = "/login";
 };
+// Kuş uçuşu mesafe hesaplayıcı (Haversine Formula)
+function calculateLinearDistance(lat1, lon1, lat2, lon2) {
+    const R = 6371; // Dünya yarıçapı (km)
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+              Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return (R * c).toFixed(1); // Örn: "5.2"
+}

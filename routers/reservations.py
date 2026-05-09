@@ -202,24 +202,29 @@ def complete_charging(reservation_id: int, db: Session = Depends(get_db),
 
     actual_start = getattr(reservation, "actual_start_time", None)
 
+    # 🚀 1. DÜZELTME: Saniye ve Dakikayı doğru ayıralım
     if actual_start:
         time_diff = datetime.now() - actual_start
-        duration_min = max(1, int(time_diff.total_seconds()))
+        duration_sec = max(1, int(time_diff.total_seconds()))
     else:
-        duration_min = 1
+        duration_sec = 1
 
-    simulated_kwh = round((charger.power_kW * (duration_min / 60)) * 0.8, 2)
+    duration_min = max(1, duration_sec // 60)  # Sadece veritabanına bilgi (log) olarak kaydetmek için dakika
+
+    # 🚀 2. DÜZELTME: Faturayı hesaplarken saniyeyi 3600'e (1 saate) bölerek Frontend ile birebir aynı hesabı yapalım
+    simulated_kwh = round((charger.power_kW * (duration_sec / 3600)) * 0.8, 4)
     price_per_kwh = charger.price_per_kWh if charger.price_per_kWh else 7.5
     total_cost = round(simulated_kwh * price_per_kwh, 2)
+
     potential_balance = driver.wallet_balance + DEFAULT_PROVISION_AMOUNT
 
-    auto_stopped = False #bakiyet kontrolu icin
+    auto_stopped = False  # bakiyet kontrolu icin
     if potential_balance < total_cost:
         # Bakiyeyi sıfıra çekiyoruz (borca girmesin)
         total_cost = potential_balance
         auto_stopped = True
 
-    # Önce provizyonu iade et, sonra faturayı kes
+    # Önce provizyonu (100 TL) iade et, sonra tam faturayı kes
     driver.wallet_balance += DEFAULT_PROVISION_AMOUNT
     driver.wallet_balance -= total_cost
 
@@ -242,16 +247,26 @@ def complete_charging(reservation_id: int, db: Session = Depends(get_db),
     reservation.status = "completed"
     if charger:
         charger.status = "available"
+        # 🚀 YENİ EKLENEN: Veritabanına Bildirim (Notification) Kaydetme
+        notif_msg = f"✅ Charging session completed. Cost: {total_cost} TL, Energy: {simulated_kwh} kWh."
+        if auto_stopped:
+            notif_msg = f"⚠️ Charging auto-stopped due to low balance. Cost: {total_cost} TL."
 
+        new_notif = models.Notification(
+            user_id=current_user.user_id,
+            message=notif_msg,
+            created_at=datetime.utcnow()
+        )
+        db.add(new_notif)
     db.commit()
 
     return {
         "message": "Charging is completed.",
         "kwh": simulated_kwh,
         "cost": total_cost,
-        "duration": duration_min
+        "duration": duration_min,
+        "auto_stopped": auto_stopped
     }
-
 
 @router.get("/charger/{charger_id}/schedule")
 def get_charger_schedule(charger_id: int, target_date: date, db: Session = Depends(get_db),

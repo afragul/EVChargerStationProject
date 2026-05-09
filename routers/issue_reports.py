@@ -7,57 +7,78 @@ import schemas
 import crud
 import models
 from database import get_db
+# 1. EKSİK OLAN KULLANICI DOĞRULAMA İMPORTUNU EKLİYORUZ:
+from routers.auth import get_current_user
 
 router = APIRouter(prefix="/issue-reports", tags=["Issue Reports"])
 
 
 @router.post("/", response_model=schemas.IssueReportResponse)
-def create_issue_report(report_in: schemas.IssueReportCreate, db: Session = Depends(get_db)):
+def create_issue_report(
+        report_in: schemas.IssueReportCreate,
+        db: Session = Depends(get_db),
+        current_user: models.User = Depends(get_current_user)  # 2. KULLANICI BİLGİSİNİ ALIYORUZ
+):
     """Yeni bir arıza bildirimi oluşturur ve cihazı devre dışı bırakır (Use Case 4)"""
     charger = crud.get_charger(db, report_in.charger_id)
     if not charger:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Charger not found")
 
-    # 1. Arıza kaydını oluştur
+    # 3. 🛑 GÜVENLİK KONTROLÜ: Sürücünün bu cihazda rezervasyonu var mı?
+    if current_user.role == "driver":
+        has_reservation = db.query(models.Reservation).filter(
+            models.Reservation.driver_id == current_user.user_id,
+            models.Reservation.charger_id == report_in.charger_id
+        ).first()
+
+        if not has_reservation:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Sadece daha önce kullandığınız veya rezervasyonunuzun olduğu cihazlar için arıza bildirebilirsiniz."
+            )
+
+    # Arıza kaydını oluştur
     report = crud.create_issue_report(db, report_in)
 
-    # 2. Cihaz durumunu "offline" (kırmızı) olarak güncelle (REQ-001)
+    # Cihaz durumunu "offline" (kırmızı) olarak güncelle
     crud.update_charger(
         db,
         charger_id=report_in.charger_id,
         charger_update=schemas.ChargerUpdate(status=models.ChargerStatus.offline)
     )
 
-    # 3. Bu cihaz için gelecekteki aktif rezervasyonları bul ve otomatik iptal et (REQ-002)
+    # Bu cihaz için gelecekteki aktif rezervasyonları bul ve otomatik iptal et
     current_time = datetime.utcnow()
-    active_reservations = crud.get_active_reservations_by_charger(db, charger_id=report_in.charger_id,
-                                                                  current_time=current_time)
+    active_reservations = crud.get_active_reservations_by_charger(
+        db, charger_id=report_in.charger_id, current_time=current_time
+    )
 
+    # 4. HATA DÜZELTİLDİ: İç içe yazılan çift "for" döngüsü teke düşürüldü
     for res in active_reservations:
+        # Rezervasyonu iptal et
         crud.cancel_reservation(db, res.reservation_id)
-        # Not: İptal edilen rezervasyonlar için Refund (iade) payment kaydı da buraya eklenebilir.
-        for res in active_reservations:
-            # Rezervasyonu iptal et
-            crud.cancel_reservation(db, res.reservation_id)
 
-            # --- REQUIREMENT BURADA SAĞLANIYOR ---
-            # A) Sürücüye provizyon ücretini iade et
-            driver = db.query(models.Driver).filter(models.Driver.driver_id == res.driver_id).first()
-            if driver:
-                driver.wallet_balance += 100.0
+        # Sürücüye provizyon ücretini iade et
+        driver = db.query(models.Driver).filter(models.Driver.driver_id == res.driver_id).first()
+        if driver:
+            driver.wallet_balance += 100.0
 
-            # B) İlgili Kullanıcıyı Bilgilendir (Notification)
-            new_notif = models.Notification(
-                user_id=res.driver_id,
-                message=f"🚨 Charger #{report_in.charger_id} has been reported broken. Your reservation on {res.date} is automatically cancelled and 100 TL has been refunded.",
-                created_at=datetime.utcnow()
-            )
-            db.add(new_notif)
+        # İlgili Kullanıcıyı Bilgilendir (Notification)
+        new_notif = models.Notification(
+            user_id=res.driver_id,
+            message=f"🚨 Charger #{report_in.charger_id} has been reported broken. Your reservation on {res.date} is automatically cancelled and 100 TL has been refunded.",
+            created_at=datetime.utcnow()
+        )
+        db.add(new_notif)
 
-            # Bildirimlerin ve cüzdan iadesinin veritabanına yansıması için kaydet
-        if active_reservations:
-            db.commit()
+    # Bildirimlerin ve cüzdan iadesinin veritabanına yansıması için kaydet
+    if active_reservations:
+        db.commit()
+
     return report
+
+
+# --- Aşağıdaki diğer GET ve PUT rotaların (get_open_reports, vs.) aynı kalacak ---
 
 
 @router.get("/open", response_model=List[schemas.IssueReportResponse])

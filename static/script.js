@@ -607,22 +607,36 @@ function startLiveDashboard(resId) {
 
     const livePanel = document.getElementById('liveChargingPanel');
     if (livePanel) {
-        // Paneldeki butonu bulur ve tıklanınca stopCharging fonksiyonunu tetikler
         const stopBtn = livePanel.querySelector('button');
         if (stopBtn) stopBtn.onclick = () => window.stopCharging(resId);
     }
-    let endTimeObj = null;
 
-    // Rezervasyon bilgilerini çek (Bitiş saatini garantiye alalım)
+    let endTimeObj = null;
+    let vehicleBatteryCapacity = 50; // Araç verisi gelmezse varsayılan 50 kWh
+    let startingBatteryPct = 20; // Simülasyon gereği şarja %20'den başlıyoruz
+
+    // 1. Rezervasyon ve Araç Bilgilerini Çek
     fetch("/reservations/me", { headers: { "Authorization": `Bearer ${token}` } })
         .then(res => res.json())
-        .then(reservations => {
+        .then(async reservations => {
             const currentRes = reservations.find(r => r.reservation_id == resId);
             if (currentRes) {
-                // Saat bilgisini parçalayıp bugünün tarihine set ediyoruz (Format: HH:mm:ss)
+                // Bitiş saatini hesapla
                 const [h, m, s] = currentRes.end_time.split(':');
                 endTimeObj = new Date();
                 endTimeObj.setHours(parseInt(h), parseInt(m), parseInt(s), 0);
+
+                // 🚀 YENİ: Aracın kendi batarya kapasitesini (kWh) bul
+                try {
+                    const vRes = await fetch("/vehicles/me", { headers: { "Authorization": `Bearer ${token}` } });
+                    if (vRes.ok) {
+                        const vehicles = await vRes.json();
+                        const vehicle = vehicles.find(v => v.vehicle_id === currentRes.vehicle_id);
+                        if (vehicle && vehicle.battery_kWh) {
+                            vehicleBatteryCapacity = vehicle.battery_kWh;
+                        }
+                    }
+                } catch(e) { console.error("Araç bilgisi çekilemedi:", e); }
             }
         });
 
@@ -631,11 +645,11 @@ function startLiveDashboard(resId) {
 
     if(window.chargeInterval) clearInterval(window.chargeInterval);
 
-    // Başlangıç bakiyesini DOM'dan al
     const balanceElement = document.getElementById("walletBalance");
     let initialBalance = parseFloat(balanceElement?.innerText || 0);
     const pricePerKwh = 7.5;
 
+    // 2. Her Saniye Çalışan Canlı Döngü
     window.chargeInterval = setInterval(() => {
         let now = new Date();
         let elapsedSeconds = Math.floor((now.getTime() - startTime) / 1000);
@@ -644,12 +658,21 @@ function startLiveDashboard(resId) {
         let kwh = (22 * (elapsedSeconds / 3600) * 0.8);
         let currentCost = parseFloat((kwh * pricePerKwh).toFixed(2));
 
+        // 🚀 YENİ: Batarya Yüzdesini Hesapla
+        let addedPct = (kwh / vehicleBatteryCapacity) * 100;
+        let currentPct = startingBatteryPct + addedPct;
+        if (currentPct > 100) currentPct = 100; // %100'ü geçmesini engelle
+
         // Arayüzü güncelle
         document.getElementById('liveTime').innerText = formatTime(elapsedSeconds);
         document.getElementById('liveKwh').innerText = kwh.toFixed(4);
         document.getElementById('liveCost').innerText = currentCost.toFixed(2);
 
-        // --- GÜNCELLEME: BAKİYEYİ EŞ ZAMANLI DÜŞÜR ---
+        // Bataryayı ekrana yazdır (Örn: %21.5)
+        const batteryEl = document.getElementById('liveBatteryPct');
+        if (batteryEl) batteryEl.innerText = '%' + currentPct.toFixed(1);
+
+        // --- BAKİYEYİ EŞ ZAMANLI DÜŞÜR ---
         let updatedBalance = (initialBalance - currentCost).toFixed(2);
         if (balanceElement) {
             balanceElement.innerText = updatedBalance;
@@ -661,9 +684,13 @@ function startLiveDashboard(resId) {
         }
 
         // --- KONTROL 2: SÜRE DOLDU MU? ---
-        // Sadece endTimeObj başarıyla oluşturulduysa kontrol et
         if (endTimeObj && now >= endTimeObj) {
             stopChargingWithReason(resId, "Charging has stopped because your reservation period has expired.");
+        }
+
+        // 🚀 KONTROL 3: BATARYA %100 OLDU MU? ---
+        if (currentPct >= 100) {
+            stopChargingWithReason(resId, "Charging stopped automatically. Battery is fully charged (%100).");
         }
 
     }, 1000);
@@ -717,8 +744,11 @@ window.stopCharging = async function(resId) {
             if (res.ok) {
                 const data = await res.json();
                 const msg = data.auto_stopped ? "⚠️ Balance too low! Charging auto-stopped." : "✅ Charging completed manually.";
-                window.showCustomAlert(`${msg}\nCost: ${data.cost} TL\nEnergy: ${data.kwh} kWh`, "Session Ended");
-                window.location.reload();
+
+                // 🚀 DÜZELTME: reload() komutunu alertin içine sakladık. Kullanıcı OK'a basana kadar sayfa yenilenmez!
+                window.showCustomAlert(`${msg}\nCost: ${data.cost} TL\nEnergy: ${data.kwh} kWh`, "Session Ended", () => {
+                    window.location.reload();
+                });
             } else {
                 window.showCustomAlert("Error stopping the charge.", "Error");
             }
