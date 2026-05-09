@@ -232,3 +232,75 @@ def get_admin_analytics(db: Session = Depends(get_db), current_user: models.User
         "peak_hours": [{"hour": k, "count": v} for k, v in peak_hours.items()],
         "user_activity" : user_activity
     }
+
+
+@router.get("/reservations/details")
+def get_all_reservations_detailed(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    require_admin(current_user)
+
+    # Tüm rezervasyonları tarihe göre yeniden eskiye sıralı getir
+    reservations = db.query(models.Reservation).order_by(models.Reservation.date.desc(),
+                                                         models.Reservation.start_time.desc()).all()
+
+    result = []
+    for r in reservations:
+        # İlişkili verileri çekiyoruz
+        driver = db.query(models.User).filter(models.User.user_id == r.driver_id).first()
+        charger = db.query(models.Charger).filter(models.Charger.charger_id == r.charger_id).first()
+        station = db.query(models.Station).filter(
+            models.Station.station_id == charger.station_id).first() if charger else None
+
+        # Araç bilgisi (Rezervasyon modelinde vehicle_id yoksa bile sürücünün ilk aracını alırız)
+        vehicle = None
+        if hasattr(r, 'vehicle_id') and r.vehicle_id:
+            vehicle = db.query(models.Vehicle).filter(models.Vehicle.vehicle_id == r.vehicle_id).first()
+        else:
+            vehicle = db.query(models.Vehicle).filter(models.Vehicle.owner_id == r.driver_id).first()
+
+        result.append({
+            "reservation_id": r.reservation_id,
+            "driver_name": driver.name if driver else "Unknown",
+            "vehicle_info": f"{vehicle.brand} {vehicle.model} ({vehicle.plate_number})" if vehicle else "Unknown",
+            "station_name": station.name if station else "Unknown",
+            "charger_id": r.charger_id,
+            "date": str(r.date),
+            "time": f"{r.start_time} - {r.end_time}",
+            "status": r.status
+        })
+    return result
+
+#İstatistikler için
+@router.get("/reservations/details")
+def get_all_reservations_detailed(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    require_admin(current_user)
+
+    # Tüm rezervasyonları tarihe göre yeniden eskiye sıralı getir
+    reservations = db.query(models.Reservation).order_by(models.Reservation.date.desc(),
+                                                         models.Reservation.start_time.desc()).all()
+
+    result = []
+    for r in reservations:
+        # İlişkili verileri çekiyoruz
+        driver = db.query(models.User).filter(models.User.user_id == r.driver_id).first()
+        charger = db.query(models.Charger).filter(models.Charger.charger_id == r.charger_id).first()
+        station = db.query(models.Station).filter(
+            models.Station.station_id == charger.station_id).first() if charger else None
+
+        # Araç bilgisi (Rezervasyon modelinde vehicle_id yoksa bile sürücünün ilk aracını alırız)
+        vehicle = None
+        if hasattr(r, 'vehicle_id') and r.vehicle_id:
+            vehicle = db.query(models.Vehicle).filter(models.Vehicle.vehicle_id == r.vehicle_id).first()
+        else:
+            vehicle = db.query(models.Vehicle).filter(models.Vehicle.owner_id == r.driver_id).first()
+
+        result.append({
+            "reservation_id": r.reservation_id,
+            "driver_name": driver.name if driver else "Unknown",
+            "vehicle_info": f"{vehicle.brand} {vehicle.model} ({vehicle.plate_number})" if vehicle else "Unknown",
+            "station_name": station.name if station else "Unknown",
+            "charger_id": r.charger_id,
+            "date": str(r.date),
+            "time": f"{r.start_time} - {r.end_time}",
+            "status": r.status
+        })
+    return result

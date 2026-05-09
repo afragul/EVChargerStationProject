@@ -138,6 +138,28 @@
                             <canvas id="peakHoursChart"></canvas>
                         </div>
                     </div>
+                    <div style="display:flex; gap:15px; margin-bottom:20px; flex-wrap:wrap;">
+                        <div style="flex:1; min-width:110px; background:rgba(0,0,0,0.3); padding:15px; border-radius:10px; border-top:3px solid #3498db; text-align:center;">
+                            <h4 style="color:#aaa; margin:0 0 5px 0; font-size:11px; text-transform:uppercase;"><i class="fas fa-users"></i> Total Users</h4>
+                            <div id="analyticsTotalUsers" style="font-size:22px; color:#3498db; font-weight:bold;">0</div>
+                        </div>
+                        <div style="flex:1; min-width:110px; background:rgba(0,0,0,0.3); padding:15px; border-radius:10px; border-top:3px solid #9b59b6; text-align:center;">
+                            <h4 style="color:#aaa; margin:0 0 5px 0; font-size:11px; text-transform:uppercase;"><i class="fas fa-car"></i> Total Drivers</h4>
+                            <div id="analyticsTotalDrivers" style="font-size:22px; color:#9b59b6; font-weight:bold;">0</div>
+                        </div>
+                        <div style="flex:1; min-width:110px; background:rgba(0,0,0,0.3); padding:15px; border-radius:10px; border-top:3px solid #e67e22; text-align:center;">
+                            <h4 style="color:#aaa; margin:0 0 5px 0; font-size:11px; text-transform:uppercase;"><i class="fas fa-user-tie"></i> Operators</h4>
+                            <div id="analyticsTotalOperators" style="font-size:22px; color:#e67e22; font-weight:bold;">0</div>
+                        </div>
+                        <div style="flex:1; min-width:110px; background:rgba(0,0,0,0.3); padding:15px; border-radius:10px; border-top:3px solid #e74c3c; text-align:center;">
+                            <h4 style="color:#aaa; margin:0 0 5px 0; font-size:11px; text-transform:uppercase;"><i class="fas fa-clock"></i> Active Res.</h4>
+                            <div id="analyticsActiveRes" style="font-size:22px; color:#e74c3c; font-weight:bold;">0</div>
+                        </div>
+                        <div style="flex:1; min-width:110px; background:rgba(0,0,0,0.3); padding:15px; border-radius:10px; border-top:3px solid #1abc9c; text-align:center;">
+                            <h4 style="color:#aaa; margin:0 0 5px 0; font-size:11px; text-transform:uppercase;"><i class="fas fa-check-circle"></i> Completed</h4>
+                            <div id="analyticsCompletedRes" style="font-size:22px; color:#1abc9c; font-weight:bold;">0</div>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- ONAY BEKLEYEN YENİ OPERATÖRLER -->
@@ -148,21 +170,40 @@
                     <div id="adminPendingOperatorsList" class="vehicle-grid"></div>
                 </div>
 
-                <div class="vehicle-section" style="margin-top: 25px;">
+               <div class="vehicle-section" style="margin-top: 25px;">
                     <div class="section-header">
                         <h3> Pending Station Claims</h3>
                     </div>
                     <div id="adminStationClaimsList" class="vehicle-grid"></div>
                  </div>
 
+                <div class="vehicle-section" style="margin-top: 30px; width: 100%; clear: both;">
+                    <div class="section-header">
+                        <h3><i class="fas fa-calendar-alt"></i> System Reservations</h3>
+                    </div>
+                    <div style="background:#1a2922; border-radius:12px; overflow-x:auto; border:1px solid rgba(255,255,255,0.1); width: 100%; box-shadow: 0 4px 10px rgba(0,0,0,0.3);">
+                        <table style="width:100%; text-align:left; color:white; border-collapse: collapse; font-size:13px; min-width: 800px;">
+                            <thead>
+                                <tr style="border-bottom:2px solid #34495e; color:#aaa; background:rgba(0,0,0,0.4);">
+                                    <th style="padding:15px; white-space: nowrap;">Date & Time</th>
+                                    <th style="padding:15px;">Driver</th>
+                                    <th style="padding:15px;">Vehicle</th>
+                                    <th style="padding:15px;">Station (Charger)</th>
+                                    <th style="padding:15px;">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="adminAllReservationsList">
+                                </tbody>
+                        </table>
+                    </div>
+                </div>
 
-                <div class="vehicle-section" style="margin-top: 25px;">
+                <div class="vehicle-section" style="margin-top: 30px; width: 100%; clear: both;">
                     <div class="section-header">
                         <h3> Station Management & Assignments</h3>
                     </div>
                     <div id="adminStationsList" class="vehicle-grid"></div>
                 </div>
-            </div>
 
             <button class="btn-logout btn-action" onclick="handleLogout()" style="margin-top: 20px;">Sign Out</button>
         </div>

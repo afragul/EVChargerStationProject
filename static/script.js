@@ -125,16 +125,17 @@ window.loadProfile = async function() {
 };
 
 
-// ADMIN (SİSTEM YÖNETİCİSİ) FONKSİYONLARI
+
 // ADMIN (SİSTEM YÖNETİCİSİ) FONKSİYONLARI
 async function loadAdminData(token) {
     try {
-        const [opRes, stRes, pendingOpRes, claimsRes, analyticsRes] = await Promise.all([
+        const [opRes, stRes, pendingOpRes, claimsRes, analyticsRes, resDetails] = await Promise.all([
             fetch("/admin/operators", { headers: { "Authorization": `Bearer ${token}` } }),
             fetch("/stations/", { headers: { "Authorization": `Bearer ${token}` } }),
             fetch("/admin/operators/pending", { headers: { "Authorization": `Bearer ${token}` } }),
             fetch("/admin/station-claims/pending", { headers: { "Authorization": `Bearer ${token}` } }),
-            fetch("/admin/analytics", { headers: { "Authorization": `Bearer ${token}` } }) // 📊 YENİ: Analitik verisi
+            fetch("/admin/analytics", { headers: { "Authorization": `Bearer ${token}` } }),
+            fetch("/admin/reservations/details", { headers: { "Authorization": `Bearer ${token}` } }) // YENİ EKLENEN İSTEK
         ]);
 
         if (opRes.ok && stRes.ok) {
@@ -143,15 +144,49 @@ async function loadAdminData(token) {
             renderAdminStations(stations, operators);
             if (pendingOpRes.ok) renderPendingOperators(await pendingOpRes.json(), stations);
         }
+
         if (claimsRes.ok) renderStationClaims(await claimsRes.json());
 
-        // 📊 YENİ: Analitikleri çizdir
+        // Analitikleri Çizdir
         if (analyticsRes.ok) {
             const analyticsData = await analyticsRes.json();
             renderAdminAnalytics(analyticsData);
         }
 
-    } catch (e) { console.error("Admin data error:", e); }
+        // YENİ: Sistem Rezervasyonlarını Çizdir
+        if (resDetails && resDetails.ok) {
+            const reservations = await resDetails.json();
+            renderAdminReservations(reservations);
+        }
+
+    } catch (e) {
+        console.error("Admin data error:", e);
+    }
+}
+
+// Rezervasyonları Tabloya Basan Fonksiyon (loadAdminData'nın hemen dışında olmalı)
+function renderAdminReservations(reservations) {
+    const el = document.getElementById("adminAllReservationsList");
+    if (!el) return;
+
+    // Eğer sistemde hiç rezervasyon yoksa:
+    if (!reservations || reservations.length === 0) {
+        el.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:20px; color:#666;">Sistemde rezervasyon bulunamadı.</td></tr>';
+        return;
+    }
+
+    // Veri varsa satırları oluştur:
+    el.innerHTML = reservations.map(r => {
+        let statusColor = r.status === 'completed' ? '#2ecc71' : (r.status === 'active' || r.status === 'charging' ? '#f39c12' : '#e74c3c');
+        return `
+        <tr style="border-bottom:1px solid rgba(255,255,255,0.05); transition: 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.05)'" onmouseout="this.style.background='transparent'">
+            <td style="padding:15px; white-space: nowrap;"><strong>${r.date}</strong><br><span style="color:#aaa; font-size:11px;">${r.time}</span></td>
+            <td style="padding:15px; color:#3498db; font-weight:bold;">${r.driver_name}</td>
+            <td style="padding:15px; color:#aaa;">${r.vehicle_info}</td>
+            <td style="padding:15px;">${r.station_name} <br><span style="font-size:11px; color:#888;">Charger #${r.charger_id}</span></td>
+            <td style="padding:15px;"><span style="color:${statusColor}; font-weight:bold; font-size:11px; text-transform:uppercase; background:rgba(0,0,0,0.3); padding:4px 8px; border-radius:4px;">${r.status}</span></td>
+        </tr>`;
+    }).join('');
 }
 
 // Onay bekleyen operatörleri HTML'e çevirip basan fonksiyon
@@ -316,14 +351,19 @@ function renderAdminStations(stations, operators) {
             html += `<div style="color:#e74c3c; font-size:12px; text-align:center; padding:10px; background:rgba(0,0,0,0.2); border-radius:8px;">⚠️ This station has no chargers yet.</div>`;
         } else {
             stationChargers.forEach(c => {
+                // Duruma göre renk ve ikon belirle
+                let cStatusColor = c.status === 'available' ? '#2ecc71' : c.status === 'occupied' ? '#f39c12' : '#e74c3c';
+                let cStatusIcon = c.status === 'available' ? '🟢' : c.status === 'occupied' ? '🟡' : '🔴';
+
                 html += `
                 <div style="background:rgba(0,0,0,0.3); padding:15px; border-radius:10px; border-left:4px solid #3498db; width:100%; position:relative;">
                     
                     <button onclick="deleteCharger('${c.charger_id}')" style="position:absolute; top:15px; right:15px; background:none; border:none; color:#e74c3c; cursor:pointer; font-size:14px;" title="Remove Charger"><i class="fas fa-trash"></i></button>
 
-                    <div style="display:flex; align-items:center; margin-bottom:10px;">
-                        <strong style="color:white; font-size:14px; margin-right:10px;">🔌 Charger #${c.charger_id}</strong>
+                    <div style="display:flex; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:10px;">
+                        <strong style="color:white; font-size:14px;">🔌 Charger #${c.charger_id}</strong>
                         <span style="font-size:11px; color:#bdc3c7; background:rgba(255,255,255,0.1); padding:4px 8px; border-radius:4px;">${c.power_kW}kW ${c.connector_type}</span>
+                        <span style="font-size:11px; color:${cStatusColor}; font-weight:bold;">${cStatusIcon} ${c.status.toUpperCase()}</span>
                     </div>
                     
                     <div style="display:flex; align-items:center; justify-content:flex-start; margin-top:12px; gap:10px;">
@@ -698,8 +738,16 @@ async function checkActiveChargingSession() {
     const token = localStorage.getItem("token");
     if (!token) return;
 
+    // 🚀 YENİ KONTROL: Sadece sürücü ekranı (driverView) açıksa istek at, admin/operatörse durdur!
+    const driverView = document.getElementById("driverView");
+    if (!driverView || driverView.style.display === "none") {
+        return;
+    }
+
     try {
         const res = await fetch("/reservations/me", { headers: { "Authorization": `Bearer ${token}` } });
+        if (!res.ok) return; // Eğer 403 vb. bir hata dönerse alt satırlara inip çökmesini engelle
+
         const reservations = await res.json();
 
         // Şuan şarjda olan bir rezervasyon var mı?
@@ -711,8 +759,7 @@ async function checkActiveChargingSession() {
             const userData = await userRes.json();
             const driverData = userData.driver_profile;
 
-            // BASİT MANTIK: Eğer bakiye 5 TL'nin altına düştüyse otomatik durdur
-            // (Bu değer charger kWh fiyatına göre de dinamik yapılabilir)
+            // Eğer bakiye 5 TL'nin altına düştüyse otomatik durdur
             if (driverData && driverData.wallet_balance < 5.0) {
                 console.log("Low balance detected! Auto-stopping...");
                 window.stopCharging(activeSession.reservation_id);
@@ -1041,9 +1088,18 @@ window.stationChartInstance = null;
 window.peakChartInstance = null;
 
 function renderAdminAnalytics(data) {
-    // 1. Özet Kartlarını Doldur
+   // 1. Özet Kartlarını Doldur
     document.getElementById("analyticsTotalRevenue").innerText = (data.total_revenue || 0).toFixed(2) + " ₺";
     document.getElementById("analyticsTotalKwh").innerText = (data.total_kwh || 0).toFixed(2) + " kWh";
+
+    // YENİ EKLENEN: Kullanıcı ve Sistem Verileri
+    if (data.user_activity) {
+        document.getElementById("analyticsTotalUsers").innerText = data.user_activity.total_users || 0;
+        document.getElementById("analyticsTotalDrivers").innerText = data.user_activity.total_drivers || 0;
+        document.getElementById("analyticsTotalOperators").innerText = data.user_activity.total_operators || 0;
+        document.getElementById("analyticsActiveRes").innerText = data.user_activity.active_reservations || 0;
+        document.getElementById("analyticsCompletedRes").innerText = data.user_activity.completed_sessions || 0;
+    }
 
     // Genel Grafik Ayarları
     Chart.defaults.color = '#aaa';

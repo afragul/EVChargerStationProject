@@ -215,6 +215,14 @@ const trDictionary = {
     "EMAIL": "E-POSTA",
     "WALLET": "CÜZDAN",
     "Back": "Geri",
+    // SİSTEM REZERVASYONLARI TABLOSU
+    "System Reservations": "Sistem Rezervasyonları",
+    "Date & Time": "Tarih ve Saat",
+    "Driver": "Sürücü",
+    "Vehicle": "Araç",
+    "Station (Charger)": "İstasyon (Cihaz)",
+    "Status": "Durum",
+    "No reservations found in the system.": "Sistemde rezervasyon bulunamadı."
 };
 
 // Tarayıcı hafızasından seçili dili al (Varsayılan: İngilizce)
