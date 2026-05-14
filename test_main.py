@@ -99,7 +99,7 @@ def test_issue_report_logic_check():
     # Bu süreç 'issue_reports.py' içinde kodlanmıştır.
 
 
-# TC07: Operatör Paneli Gizliliği (UC 4.2)
+# TC07: Operatör Paneli Giizliliği (UC 4.2)
 def test_operator_dashboard_unauthorized():
     """
     Use Case 4.2: Arıza raporlarının sadece yetkili operatörler
